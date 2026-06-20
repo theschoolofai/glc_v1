@@ -50,7 +50,20 @@ SHARED_ALLOWLIST: list[str] = [
 
 
 ROW_RE = re.compile(r"^\|\s*([\w-]+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$")
-GROUP_MARKER_RE = re.compile(r"^\s*#\s*Group:\s*([\w-]+)\s*$", re.IGNORECASE | re.MULTILINE)
+# Group marker accepts any name to the end of the line, so students can
+# write "Telegram", "Group Telegram", or "Whisper.cpp" — we normalise both
+# sides before comparing in `claimed_globs`.
+GROUP_MARKER_RE = re.compile(
+    r"^\s*#\s*Group:\s*([^\r\n]+?)\s*$", re.IGNORECASE | re.MULTILINE
+)
+
+
+def normalize_group(name: str) -> str:
+    """`Group Telegram` and `Telegram` both normalise to `telegram`."""
+    n = name.strip().lower()
+    if n.startswith("group "):
+        n = n[len("group "):].strip()
+    return n
 
 
 def parse_claims(text: str) -> list[tuple[str, str, list[str]]]:
@@ -75,9 +88,10 @@ def parse_claims(text: str) -> list[tuple[str, str, list[str]]]:
 
 
 def claimed_globs(rows: list[tuple[str, str, list[str]]], group: str) -> list[str]:
+    target = normalize_group(group)
     out: list[str] = []
     for _slot, g, globs in rows:
-        if g.lower() == group.lower():
+        if normalize_group(g) == target:
             out.extend(globs)
     return out
 

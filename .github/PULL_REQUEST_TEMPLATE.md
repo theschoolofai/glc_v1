@@ -9,6 +9,13 @@
 # Group: <your-group-name>
 # Slot: <your-slot-name>
 
+<!--
+  Use the short form for the group name — i.e. `Telegram`, `Whisper.cpp`,
+  `Gemini Live STT` — not `Group Telegram`. The slot is the lowercase
+  identifier from the table in GROUPS.md, e.g. `telegram`, `whisper_cpp`,
+  `gemini_live_stt`.
+-->
+
 ## Group
 
 - **Members**: <!-- one line per member -->
