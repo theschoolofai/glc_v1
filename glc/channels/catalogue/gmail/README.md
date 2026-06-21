@@ -196,17 +196,3 @@ Attachments are stored ephemerally at `~/.glc/artifacts/<sha256[:16]>`:
 - Artifact store lifecycle (store → get → remove)
 - Reply header verification (In-Reply-To, References)
 
-## Team Ownership
-
-| Person | Method | Responsibility |
-|--------|--------|---------------|
-| Sai Teja | Class skeleton | `__init__`, imports, class structure |
-| Irene | `schemas.py` | Channel-specific Pydantic types |
-| Shrivastava | `_parse_pubsub_envelope()` | Decode Pub/Sub notification |
-| Harapanahalli | `_fetch_history()` | Gmail History API call |
-| Nitha | `_fetch_message()` | Gmail Messages API call |
-| Pankaj | `_extract_text_plain()` | MIME parsing, text/plain extraction |
-| Shrey | `on_message()` | Orchestrates the inbound pipeline |
-| Shwetha | `_format_reply()` | RFC 2822 MIME builder for outbound |
-| Rajan | `send()` | Gmail send API integration |
-| Vishy | Trust + error helpers | `_resolve_trust_level()`, `_check_allowlist()`, `_handle_rate_limit()` |
