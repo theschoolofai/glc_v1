@@ -63,6 +63,7 @@ glc/channels/catalogue/gmail/
 ```bash
 git clone https://github.com/Shwethaamrutha/glc_v1.git
 cd glc_v1
+git checkout feat/gmail-adapter
 uv sync
 ```
 
@@ -93,10 +94,11 @@ This opens a browser for OAuth consent. After approval:
 ### Step 4: Run the live server
 
 ```bash
+export GLC_GMAIL_OWNER="your-personal-email@gmail.com"
 uv run python -m glc.channels.catalogue.gmail.server
 ```
 
-The server polls Gmail every 5 seconds. Send an email to your bot account to see the full pipeline logged.
+The server polls Gmail every 5 seconds. Send an email from your personal account to the bot account to see the full pipeline logged. The `GLC_GMAIL_OWNER` email will get `owner_paired` trust level.
 
 ### Step 5: Run tests
 
@@ -158,7 +160,7 @@ Attachments are stored ephemerally at `~/.glc/artifacts/<sha256[:16]>`:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GLC_GMAIL_OWNER` | `shwetha.sd78@gmail.com` | Owner email for trust pairing |
+| `GLC_GMAIL_OWNER` | (none — required) | Owner email for trust pairing |
 | `GMAIL_BOT_ADDRESS` | `me` | From address in outbound emails |
 | `GLC_ARTIFACTS_DIR` | `~/.glc/artifacts` | Attachment storage directory |
 | `GLC_PAIRING_DB` | `~/.glc/pairings.sqlite` | Trust pairing database path |
