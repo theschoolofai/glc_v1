@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from glc.voice.tts.base import SynthesizeResult, TTSProvider
 
-import base64  # decode the base64 audio chunks the server sends back
+import base64  # decode the base64 audio chunks the server sends back.
 import io      # in-memory buffer, used to build the WAV file without touching disk
 import json    # encode/decode the JSON frames sent over the websocket
 import os      # read GEMINI_API_KEY from the environment
