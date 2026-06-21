@@ -1,19 +1,21 @@
-"""Gemini Live realtime full-duplex TTS provider."""
+"""Provider for Gemini Live realtime full-duplex TTS (BidiGenerateContent WebSocket)."""
 
 from __future__ import annotations
 
-from glc.voice.tts.base import (
-    SynthesizeResult,
-    TTSError,
-    TTSProvider,
-)
+# SynthesizeResult: the return type every TTS provider must produce.
+# TTSError: the exception every TTS provider must raise on failure (carries an HTTP status).
+# TTSProvider: the abstract base class this Provider implements.
+from glc.voice.tts.base import SynthesizeResult, TTSProvider, TTSError
 
-import base64  # decode the base64 audio chunks the server sends back.
-import io      # in-memory buffer, used to build the WAV file without touching disk.
+#code_start
+import base64  # decode the base64 audio chunks the server sends back
+import io      # in-memory buffer, used to build the WAV file without touching disk
 import json    # encode/decode the JSON frames sent over the websocket
 import os      # read GEMINI_API_KEY from the environment
 import wave    # stdlib helper to wrap raw PCM bytes into a valid .wav container
+
 import websockets  # the websocket client library used to talk to Gemini Live
+
 # Which Gemini model to use. Must be one of the "Live API: Supported" models
 # (verified against the real API) — TTS-only models like gemini-3.1-flash-tts-preview
 # do NOT work here because they don't support the websocket protocol at all.
@@ -26,7 +28,6 @@ GEMINI_LIVE_WS_URL = (
     "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
 )
 #code_end
-
 
 class Provider(TTSProvider):
     name = "gemini_live"  # used by the router to identify this provider in PREFER_TO_PROVIDER

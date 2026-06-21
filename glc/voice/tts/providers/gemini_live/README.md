@@ -1,34 +1,108 @@
-# Gemini Live (realtime full-duplex)
+# Gemini Live TTS (realtime full-duplex)
 
-Group assignment in Session 11. Implement the realtime full-duplex
-TTS bridge using BidiGenerateContent. Pairs naturally with the
-matching STT provider — one WebSocket session carries both legs.
+Slot: `gemini_live_tts` — owned by Group Gemini Live TTS.
 
-## What you build
+Implements the realtime full-duplex TTS bridge using Google's
+`BidiGenerateContent` WebSocket. The same wire format will eventually
+carry the matching STT leg in one session; for S11 the `synthesize()`
+surface is non-streaming and the WebUI voice-mode integration opens
+its own session through this provider in S12.
 
-- `adapter.py` — subclass `TTSProvider`. Open the WebSocket, send
-  the setup frame with `responseModalities: ["AUDIO"]`, send the
-  text as a `clientContent.turns[].parts[].text` frame, accumulate
-  `serverContent.modelTurn.parts[].inlineData.data` chunks until
-  `turnComplete`, then close.
+## Architecture
+
+One WebSocket, one turn per `synthesize()` call:
+
+1. Open `wss://generativelanguage.googleapis.com/.../BidiGenerateContent?key=...`.
+2. Send the **setup frame** with `responseModalities: ["AUDIO"]`. This
+   is the single most load-bearing line in the adapter — defaulting to
+   `TEXT` produces zero audio and zero error, just an empty result.
+3. Drain the server's `setupComplete` ack before sending content.
+4. Send one `clientContent` frame with the user text and
+   `turnComplete: true` so the server starts replying immediately.
+5. Stream-read `serverContent.modelTurn.parts[].inlineData.data`
+   (base64 PCM) until the server flips `turnComplete`.
+6. Concatenate PCM chunks, wrap once in a WAV header, return a
+   `SynthesizeResult` with `audio_b64`, `mime=audio/wav`, and the
+   sample rate the server actually used.
+
+The adapter is testable without the network: tests inject a mock via
+`config={"mock": ...}` that records the setup frame and returns canned
+audio, so the seven structural + behavioural tests run offline.
 
 ## Required environment
 
-- `GEMINI_API_KEY`.
+- `GEMINI_API_KEY` — appended as a `?key=` query param. The adapter
+  raises `TTSError(status=401)` if it's missing.
 
-## Quirks
+## Channel quirks we hit
 
-- Audio comes back as 24 kHz mono base64 PCM chunks. Concatenate
-  and wrap as a WAV before returning.
-- The session is full-duplex by design — the server may interleave
-  partial responses with usage metadata frames.
-- For S11 the synthesize() surface is non-streaming; the eventual
-  WebUI voice mode opens its own WS through this provider.
+- **`responseModalities` defaults to TEXT.** No error, no warning,
+  just no audio. This is *the* gotcha for Gemini Live — and the one
+  thing the behavioural test exists to catch.
+- **Audio is raw PCM, not WAV.** Each `inlineData.data` is base64
+  PCM with a `mimeType` like `audio/pcm;rate=24000`. We parse the
+  rate out of the mimeType (it may not always be 24 kHz), concatenate
+  the chunks, then synthesize a WAV header ourselves with the stdlib
+  `wave` module. No temp files — everything stays in memory.
+- **`setupComplete` must be drained.** Sending the content frame
+  before reading the ack works on some runs and stalls on others.
+  One blocking `await ws.recv()` between setup and content frames
+  is the cheapest fix.
+- **Live-API model names are not TTS-preview model names.** Only
+  models listed under "Live API: Supported" accept the
+  `BidiGenerateContent` protocol. `gemini-3.1-flash-tts-preview`
+  (and friends) silently fail to upgrade the WebSocket; we pin
+  `models/gemini-3.1-flash-live-preview`.
+- **The session is full-duplex by design.** The server interleaves
+  partial audio responses with empty-`serverContent` keepalive
+  frames and usage-metadata frames. The read loop skips anything
+  without `serverContent.modelTurn` and stops on the first
+  `turnComplete: true`.
 
-## Tests you need to pass
+## How our tests exercise the behavioural boundary
 
-`tests/voice/tts/test_gemini_live_tts.py` — six structural tests
-plus `test_channel_specific_behaviour_response_modalities_audio`:
-the setup frame must include `responseModalities: ["AUDIO"]`. Setup
-frames defaulting to TEXT cause the server to emit text-only
-responses, which the adapter would silently treat as empty audio.
+Seven tests live at `tests/voice/tts/test_gemini_live.py`. Six are
+structural (provider name, return shape, text propagation, sample
+rate, error propagation, empty text). The seventh —
+`test_channel_specific_behaviour_response_modalities_audio` — is
+the load-bearing one: it asserts the setup frame the adapter sends
+declares `responseModalities=["AUDIO"]`.
+
+This is the voice-provider analogue of the trust-level boundary the
+channel adapters guard. If the next person edits the setup frame and
+omits `responseModalities`, the structural tests still pass — the
+mock happily returns canned audio — but every real call would come
+back silent. The behavioural test is the only thing standing
+between us and that regression.
+
+## Running it for real (demo)
+
+```sh
+export GEMINI_API_KEY=...
+uv run python -m glc.voice.tts.providers.gemini_live.smoke "hello from glc"
+afplay /tmp/gemini_live_out.wav   # macOS
+```
+
+`smoke.py` calls the real adapter (no mock), writes the resulting WAV
+to `/tmp/gemini_live_out.wav`, and prints provider metadata plus three
+latency numbers (`total_ms`, `audio_ms`, `realtime_factor`).
+
+Measured against the real Gemini Live free tier with the sentence
+*"Hello from G L C version one. Gemini Live smoke test."*:
+
+```
+provider:        gemini_live
+mime:            audio/wav
+sample_rate:     24000 Hz
+wav_bytes:       429,674
+total_ms:        10672.1
+audio_ms:         8950.6
+realtime_factor:    0.84x
+wrote:           /tmp/gemini_live_out.wav
+```
+
+`realtime_factor < 1` means `synthesize()` returned slightly slower
+than the audio plays — because it waits for the *full* turn before
+returning. The sub-second voice budget in §9 needs a streaming
+surface that yields chunks as they arrive; that surface is a future
+PR on top of this provider.
