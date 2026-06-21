@@ -10,7 +10,7 @@ glc/channels/catalogue/gmail/
 ├── artifacts.py        # Ephemeral artifact store for attachments
 ├── auth_setup.py       # One-time OAuth setup + Gmail watch registration
 ├── server.py           # Live demo server (polls Gmail, logs pipeline)
-├── schemas.py          # Channel-specific Pydantic types (unused for now)
+├── schemas.py          # Gmail wire-format Pydantic types (Pub/Sub, API payloads)
 ├── __init__.py
 ├── .gitignore          # Blocks credentials/tokens from git
 ├── credentials.json    # OAuth client credentials (NOT committed)

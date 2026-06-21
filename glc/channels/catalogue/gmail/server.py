@@ -24,7 +24,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 from glc.channels.catalogue.gmail.adapter import Adapter
-from glc.channels.catalogue.gmail.artifacts import cleanup_expired, cleanup_session
+from glc.channels.catalogue.gmail.artifacts import cleanup_expired
 from glc.channels.envelope import ChannelReply
 from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
@@ -321,7 +321,8 @@ def main():
                         print(f"     {DIM}DO:{RESET}  Strip display name → \"{sender_bare}\"")
                         trust = classify("gmail", sender_bare)
                         trust_color = GREEN if trust == "owner_paired" else YELLOW if trust == "user_paired" else RED
-                        print(f"         SELECT * FROM pairings WHERE channel='gmail' AND channel_user_id='{sender_bare}'")
+                        print("         SELECT trust_level FROM pairings")
+                        print(f"         WHERE channel='gmail' AND channel_user_id='{sender_bare}'")
                         print(f"     {DIM}OUT:{RESET} {trust_color}trust_level = {trust}{RESET}")
                         print()
 
@@ -337,7 +338,7 @@ def main():
                             print(f"  {BOLD}Step 5: _extract_text_plain(email_msg){RESET}")
                             print(f"     {DIM}IN:{RESET}  MIME parts: [text/plain, text/html, ...]")
                             print(f"     {DIM}DO:{RESET}  Walk MIME tree, pick first text/plain, discard text/html")
-                            print(f"     {DIM}OUT:{RESET} {CYAN}\"{(msg.text or '').strip()[:120]}\"{RESET}")
+                            print(f"     {DIM}OUT:{RESET} {CYAN}\"{(msg.text or '').strip()[:500]}\"{RESET}")
                             print()
 
                             # Step 6
@@ -361,7 +362,7 @@ def main():
                             print(f"     {DIM}channel_user_id ={RESET} {WHITE}\"{msg.channel_user_id}\"{RESET}")
                             print(f"     {DIM}trust_level     ={RESET} {trust_color}{msg.trust_level}{RESET}")
                             print(f"     {DIM}thread_id       ={RESET} {WHITE}\"{msg.thread_id}\"{RESET}")
-                            print(f"     {DIM}text            ={RESET} {WHITE}\"{(msg.text or '').strip()[:120]}\"{RESET}")
+                            print(f"     {DIM}text            ={RESET} {WHITE}\"{(msg.text or '').strip()[:500]}\"{RESET}")
                             print(f"     {DIM}arrived_at      ={RESET} {WHITE}{msg.arrived_at.strftime('%H:%M:%S.%f')[:-3]}{RESET}")
                             if msg.attachments:
                                 print(f"     {DIM}attachments     ={RESET} {WHITE}[{RESET}")
@@ -400,12 +401,11 @@ def main():
                             if result.get("id"):
                                 processed_ids.add(result["id"])
 
-                        # Cleanup: remove artifacts after processing
+                        # Artifacts are NOT deleted here — the agent may still
+                        # need them. They auto-expire after 5 minutes via
+                        # cleanup_expired() which runs each poll cycle.
                         if msg and msg.attachments:
-                            refs = [att.ref for att in msg.attachments]
-                            cleaned = cleanup_session(refs)
-                            if cleaned:
-                                print(f"  {DIM}Artifacts cleaned: {cleaned} file(s) removed from disk{RESET}")
+                            print(f"  {DIM}Artifacts stored: {len(msg.attachments)} file(s) — TTL 5min{RESET}")
 
                         elapsed = (datetime.now(UTC) - msg.arrived_at).total_seconds() if msg else 0
                         print()

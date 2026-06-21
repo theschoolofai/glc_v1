@@ -26,6 +26,11 @@ from typing import Any, Literal, Protocol
 
 from glc.channels.base import ChannelAdapter
 from glc.channels.catalogue.gmail.artifacts import store as artifact_store
+from glc.channels.catalogue.gmail.schemas import (
+    GmailSendPayload,
+    PubSubMessageData,
+    PubSubPushNotification,
+)
 from glc.channels.envelope import Attachment, ChannelMessage, ChannelReply
 from glc.security.trust_level import TrustLevel, classify
 
@@ -194,10 +199,12 @@ class Adapter(ChannelAdapter):
         # Person 8 (Shwetha): format the reply as MIME
         raw = self._format_reply(reply)
 
-        # Build the API request body
-        payload: dict[str, Any] = {"raw": raw}
-        if reply.thread_id:
-            payload["threadId"] = reply.thread_id
+        # Build and validate the API request body
+        send_payload = GmailSendPayload(
+            raw=raw,
+            threadId=reply.thread_id,
+        )
+        payload = send_payload.model_dump(exclude_none=True)
 
         # Call Gmail API
         client = self._get_client()
@@ -225,13 +232,12 @@ class Adapter(ChannelAdapter):
             ValueError: if the envelope is malformed
         """
         try:
-            pubsub_data = raw["message"]["data"]
-            decoded = json.loads(base64.b64decode(pubsub_data))
-            email_address = decoded["emailAddress"]
-            history_id = int(decoded["historyId"])
+            notification = PubSubPushNotification(**raw)
+            decoded_json = json.loads(base64.b64decode(notification.message.data))
+            data = PubSubMessageData(**decoded_json)
         except (KeyError, json.JSONDecodeError, ValueError, TypeError) as e:
             raise ValueError(f"Malformed Pub/Sub envelope: {e}") from e
-        return email_address, history_id
+        return data.emailAddress, data.historyId
 
     # ──────────────────────────────────────────────────────────────────
     # Person 4 (Harapanahalli): Gmail History API client
