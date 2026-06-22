@@ -1,7 +1,7 @@
 """Gmail (Pub/Sub push) channel adapter.
 
-Group 6 — modular structure:
-  Person 1 (Sai Teja):       Class skeleton + __init__
+Group 6 — modular structure (task specs: Tasks/README.md):
+  Person 1 (Sai Teja):       GmailClient protocol, class skeleton, __init__, _get_client(), _LiveGmailClient
   Person 3 (Shrivastava):    _parse_pubsub_envelope()
   Person 4 (Harapanahalli):  _fetch_history()
   Person 5 (Nitha):          _fetch_message()
@@ -35,6 +35,11 @@ from glc.channels.envelope import Attachment, ChannelMessage, ChannelReply
 from glc.security.trust_level import TrustLevel, classify
 
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────────
+# Person 1 (Sai Teja): GmailClient protocol, skeleton, client wiring
+# ──────────────────────────────────────────────────────────────────
 
 
 class GmailClient(Protocol):
@@ -446,6 +451,11 @@ class Adapter(ChannelAdapter):
         status = response.get("status") or (response.get("error") or {}).get("code")
         if status == 429:
             logger.warning("Gmail API rate limited (429): %s", response.get("error", {}).get("message", ""))
+
+
+# ──────────────────────────────────────────────────────────────────
+# Person 1 (Sai Teja): _LiveGmailClient — production GmailClient impl
+# ──────────────────────────────────────────────────────────────────
 
 
 class _LiveGmailClient:
