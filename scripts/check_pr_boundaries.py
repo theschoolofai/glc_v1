@@ -53,16 +53,14 @@ ROW_RE = re.compile(r"^\|\s*([\w-]+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$")
 # Group marker accepts any name to the end of the line, so students can
 # write "Telegram", "Group Telegram", or "Whisper.cpp" — we normalise both
 # sides before comparing in `claimed_globs`.
-GROUP_MARKER_RE = re.compile(
-    r"^\s*#\s*Group:\s*([^\r\n]+?)\s*$", re.IGNORECASE | re.MULTILINE
-)
+GROUP_MARKER_RE = re.compile(r"^\s*#\s*Group:\s*([^\r\n]+?)\s*$", re.IGNORECASE | re.MULTILINE)
 
 
 def normalize_group(name: str) -> str:
     """`Group Telegram` and `Telegram` both normalise to `telegram`."""
     n = name.strip().lower()
     if n.startswith("group "):
-        n = n[len("group "):].strip()
+        n = n[len("group ") :].strip()
     return n
 
 
