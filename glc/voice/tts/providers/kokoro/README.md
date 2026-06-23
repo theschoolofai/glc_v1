@@ -90,3 +90,27 @@ Run them (with the project env):
 ```sh
 uv run pytest tests/voice/tts/test_kokoro.py -v
 ```
+
+### Latest verified run
+
+```
+collected 7 items
+
+tests/voice/tts/test_kokoro.py::test_provider_name_matches PASSED                  [ 14%]
+tests/voice/tts/test_kokoro.py::test_synthesize_returns_synthesize_result PASSED   [ 28%]
+tests/voice/tts/test_kokoro.py::test_synthesize_passes_text_to_upstream PASSED     [ 42%]
+tests/voice/tts/test_kokoro.py::test_synthesize_records_sample_rate PASSED         [ 57%]
+tests/voice/tts/test_kokoro.py::test_synthesize_propagates_upstream_error PASSED   [ 71%]
+tests/voice/tts/test_kokoro.py::test_synthesize_handles_empty_text PASSED          [ 85%]
+tests/voice/tts/test_kokoro.py::test_channel_specific_behaviour_pipeline_reuse PASSED [100%]
+
+======================= 7 passed in 0.14s =======================
+```
+
+**7/7 passed** on branch `kokoro_adapter_imp`. Quality gates on the owned path
+are also green: `ruff check` → *All checks passed!* and `mypy` → *Success: no
+issues found in 4 source files*.
+
+> All seven run through the injected mock (offline, deterministic). They
+> exercise `adapter.py`'s mock-delegate branch only; the real `runner.synthesize`
+> path is proven separately by the demo video.
