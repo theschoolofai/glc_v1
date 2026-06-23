@@ -18,8 +18,11 @@ whisper.cpp's `whisper-cli` binary and the base GGML model.
 ## Quirks
 
 - The CLI writes its JSON next to the input file as `<input>.json`.
-- Audio inputs longer than ~30s should be VAD-trimmed first — long
-  silences inflate latency without improving the transcript.
+- Audio inputs longer than ~30s are VAD-trimmed first — long silences
+  inflate latency without improving the transcript. The trim uses
+  whisper.cpp's threshold-based VAD (`--vad -vt N`, default 0.5,
+  override via `GLC_WHISPER_VAD_THRESHOLD`); no Silero model file is
+  needed.
 - The base model is ~150 MB on disk and runs in real-time on Apple
   Silicon. The small model is faster but degrades on accented speech.
 

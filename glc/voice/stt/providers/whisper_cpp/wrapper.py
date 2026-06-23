@@ -13,13 +13,29 @@ import os
 import shutil
 import subprocess
 import tempfile
+import warnings
 from pathlib import Path
 
 MODEL_DIR = Path(os.path.expanduser(os.getenv("GLC_WHISPER_MODEL_DIR", "~/.glc/models/whisper-base")))
 MODEL_FILE = MODEL_DIR / "ggml-base.bin"
 
 
-def run_whisper_cpp(audio: bytes, mime: str) -> tuple[str, str, int]:
+DEFAULT_VAD_THRESHOLD = 0.5
+
+
+def _build_argv(cli: str, model: Path, audio_path: Path, vad: bool) -> list[str]:
+    """Build the whisper-cli argv, appending native VAD flags when asked.
+
+    VAD is threshold-based (`--vad -vt N`) rather than model-based: no
+    separate Silero model file is required, just a speech-probability cut.
+    """
+    argv = [cli, "-m", str(model), "-f", str(audio_path), "-oj"]
+    if vad:
+        argv += ["--vad", "-vt", f"{DEFAULT_VAD_THRESHOLD}"]
+    return argv
+
+
+def run_whisper_cpp(audio: bytes, mime: str, vad: bool = False) -> tuple[str, str, int]:
     cli = shutil.which("whisper-cli") or shutil.which("whisper.cpp")
     if cli is None:
         raise RuntimeError(
@@ -38,7 +54,7 @@ def run_whisper_cpp(audio: bytes, mime: str) -> tuple[str, str, int]:
         audio_path = Path(f.name)
     try:
         out = subprocess.run(
-            [cli, "-m", str(MODEL_FILE), "-f", str(audio_path), "-oj"],
+            _build_argv(cli, MODEL_FILE, audio_path, vad),
             capture_output=True,
             text=True,
             check=True,
