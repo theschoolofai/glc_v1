@@ -17,12 +17,26 @@ from glc.voice.tts.providers.gemini_live.schemas import (
     build_setup_frame,
     ws_url,
 )
+from glc.voice.tts.providers.gemini_live.policy import TTSPolicy
+from glc.voice.tts.providers.gemini_live.schemas import TTSPolicyConfig
 
+#inout text size     
+input_text_max_length = int(os.getenv("GEMINI_LIVE_TTS_INPUT_TEXT_MAX_LENGTH", 1000))
+input_text_min_length = int(os.getenv("GEMINI_LIVE_TTS_INPUT_TEXT_MIN_LENGTH", 1))
+
+#output audio size
+output_audio_max_size = int(os.getenv("GEMINI_LIVE_TTS_OUTPUT_AUDIO_MAX_SIZE", 5 * 1024 * 1024))
 
 class Provider(TTSProvider):
     name = "gemini_live"
 
+    def __init__(self, config: dict | None = None) -> None:
+        super().__init__(config)
+        policy_config = TTSPolicyConfig(input_text_max_length, input_text_min_length, output_audio_max_size)
+        self.policy = TTSPolicy(policy_config)
     async def synthesize(self, text: str, voice_id: str | None = None) -> SynthesizeResult:
+        #validate input text
+        self.policy.validate_input(text)
         setup_frame = build_setup_frame(voice_id)
 
         mock = self.config.get("mock")
@@ -70,6 +84,8 @@ class Provider(TTSProvider):
             raise TTSError(f"gemini_live upstream error: {e}", status=502) from e
 
         wav_bytes = self._pcm_to_wav(b"".join(pcm_chunks), sample_rate)
+        #validate output audio size
+        self.policy.validate_output(wav_bytes)
         return SynthesizeResult(
             audio_b64=base64.b64encode(wav_bytes).decode("ascii"),
             mime="audio/wav",

@@ -36,7 +36,7 @@ from glc.voice.tts.base import TTSError
 from glc.voice.tts.providers.gemini_live.adapter import Provider
 
 DEFAULT_TEXT = "Hello from Gemini Live. This is a smoke test for GLC version one."
-DEFAULT_OUT = Path("/tmp/gemini_live_out.wav")
+DEFAULT_OUT = Path( os.sep + "tmp" + os.sep + "gemini_live_out.wav" )
 
 
 def _audio_duration_ms(wav_bytes: bytes) -> float:
