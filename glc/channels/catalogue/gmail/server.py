@@ -122,11 +122,16 @@ class LiveGmailClient:
                 "historyId": str(start_history_id),
             }
         try:
-            result = self.service.users().history().list(
-                userId="me",
-                startHistoryId=str(start_history_id),
-                historyTypes=["messageAdded"],
-            ).execute()
+            result = (
+                self.service.users()
+                .history()
+                .list(
+                    userId="me",
+                    startHistoryId=str(start_history_id),
+                    historyTypes=["messageAdded"],
+                )
+                .execute()
+            )
             return result
         except Exception:
             return {"history": []}
@@ -134,14 +139,10 @@ class LiveGmailClient:
     def messages_get(self, message_id: str) -> dict:
         if message_id in self._message_cache:
             return self._message_cache.pop(message_id)
-        return self.service.users().messages().get(
-            userId="me", id=message_id, format="raw"
-        ).execute()
+        return self.service.users().messages().get(userId="me", id=message_id, format="raw").execute()
 
     async def send(self, payload: dict) -> dict:
-        result = self.service.users().messages().send(
-            userId="me", body=payload
-        ).execute()
+        result = self.service.users().messages().send(userId="me", body=payload).execute()
         self.send_log.append(payload)
         return result
 
@@ -188,10 +189,7 @@ def format_bytes(n: int) -> str:
 def main():
     import asyncio
 
-    print(header_box(
-        "GLC v1 — Gmail Channel Adapter",
-        "Group 6 | Session 11 | Live Demo"
-    ))
+    print(header_box("GLC v1 — Gmail Channel Adapter", "Group 6 | Session 11 | Live Demo"))
 
     print(section("[*]", "Authenticating..."))
     creds = get_credentials()
@@ -287,7 +285,9 @@ def main():
                         }
 
                         # Show the raw Pub/Sub data
-                        inner_json = json.dumps({"emailAddress": email_address, "historyId": record_history_id})
+                        inner_json = json.dumps(
+                            {"emailAddress": email_address, "historyId": record_history_id}
+                        )
                         raw_b64_snippet = raw_b64[:60]
 
                         print(divider())
@@ -296,31 +296,43 @@ def main():
 
                         # Step 1
                         print(f"  {BOLD}Step 1: _parse_pubsub_envelope(raw){RESET}")
-                        print(f"     {DIM}IN:{RESET}  message.data = \"{base64.b64encode(inner_json.encode()).decode()[:50]}...\"")
+                        print(
+                            f'     {DIM}IN:{RESET}  message.data = "{base64.b64encode(inner_json.encode()).decode()[:50]}..."'
+                        )
                         print(f"     {DIM}DO:{RESET}  base64.decode(message.data)")
-                        print(f"     {DIM}OUT:{RESET} {CYAN}{{\"emailAddress\": \"{email_address}\", \"historyId\": {record_history_id}}}{RESET}")
+                        print(
+                            f'     {DIM}OUT:{RESET} {CYAN}{{"emailAddress": "{email_address}", "historyId": {record_history_id}}}{RESET}'
+                        )
                         print()
 
                         # Step 2
                         print(f"  {BOLD}Step 2: _fetch_history(historyId={record_history_id}){RESET}")
                         print(f"     {DIM}IN:{RESET}  start_history_id = {record_history_id}")
-                        print(f"     {DIM}DO:{RESET}  GET gmail/v1/users/me/history?startHistoryId={record_history_id}&historyTypes=messageAdded")
-                        print(f"     {DIM}OUT:{RESET} {CYAN}{{\"history\": [{{\"messagesAdded\": [{{\"message\": {{\"id\": \"{msg_id}\", \"threadId\": \"{full_msg.get('threadId')}\"}}}}]}}]}}{RESET}")
+                        print(
+                            f"     {DIM}DO:{RESET}  GET gmail/v1/users/me/history?startHistoryId={record_history_id}&historyTypes=messageAdded"
+                        )
+                        print(
+                            f'     {DIM}OUT:{RESET} {CYAN}{{"history": [{{"messagesAdded": [{{"message": {{"id": "{msg_id}", "threadId": "{full_msg.get("threadId")}"}}}}]}}]}}{RESET}'
+                        )
                         print()
 
                         # Step 3
-                        print(f"  {BOLD}Step 3: _fetch_message(id=\"{msg_id}\"){RESET}")
-                        print(f"     {DIM}IN:{RESET}  message_id = \"{msg_id}\"")
+                        print(f'  {BOLD}Step 3: _fetch_message(id="{msg_id}"){RESET}')
+                        print(f'     {DIM}IN:{RESET}  message_id = "{msg_id}"')
                         print(f"     {DIM}DO:{RESET}  GET gmail/v1/users/me/messages/{msg_id}?format=raw")
-                        print(f"     {DIM}OUT:{RESET} {CYAN}{{\"id\": \"{msg_id}\", \"raw\": \"{raw_b64_snippet}...\", \"sizeEstimate\": {size}}}{RESET}")
+                        print(
+                            f'     {DIM}OUT:{RESET} {CYAN}{{"id": "{msg_id}", "raw": "{raw_b64_snippet}...", "sizeEstimate": {size}}}{RESET}'
+                        )
                         print()
 
                         # Step 4: Extract sender + resolve trust (before expensive parsing)
                         print(f"  {BOLD}Step 4: _extract_email(From header) + _resolve_trust_level(){RESET}")
-                        print(f"     {DIM}IN:{RESET}  From: \"{sender}\"")
-                        print(f"     {DIM}DO:{RESET}  Strip display name → \"{sender_bare}\"")
+                        print(f'     {DIM}IN:{RESET}  From: "{sender}"')
+                        print(f'     {DIM}DO:{RESET}  Strip display name → "{sender_bare}"')
                         trust = classify("gmail", sender_bare)
-                        trust_color = GREEN if trust == "owner_paired" else YELLOW if trust == "user_paired" else RED
+                        trust_color = (
+                            GREEN if trust == "owner_paired" else YELLOW if trust == "user_paired" else RED
+                        )
                         print("         SELECT trust_level FROM pairings")
                         print(f"         WHERE channel='gmail' AND channel_user_id='{sender_bare}'")
                         print(f"     {DIM}OUT:{RESET} {trust_color}trust_level = {trust}{RESET}")
@@ -337,19 +349,25 @@ def main():
                             # Step 5
                             print(f"  {BOLD}Step 5: _extract_text_plain(email_msg){RESET}")
                             print(f"     {DIM}IN:{RESET}  MIME parts: [text/plain, text/html, ...]")
-                            print(f"     {DIM}DO:{RESET}  Walk MIME tree, pick first text/plain, discard text/html")
-                            print(f"     {DIM}OUT:{RESET} {CYAN}\"{(msg.text or '').strip()[:500]}\"{RESET}")
+                            print(
+                                f"     {DIM}DO:{RESET}  Walk MIME tree, pick first text/plain, discard text/html"
+                            )
+                            print(f'     {DIM}OUT:{RESET} {CYAN}"{(msg.text or "").strip()[:500]}"{RESET}')
                             print()
 
                             # Step 6
                             print(f"  {BOLD}Step 6: _extract_attachments(email_msg){RESET}")
                             print(f"     {DIM}IN:{RESET}  MIME tree ({format_bytes(size)})")
-                            print(f"     {DIM}DO:{RESET}  For each non-text part: sha256(bytes)[:16] → art:<hash>, write to disk")
+                            print(
+                                f"     {DIM}DO:{RESET}  For each non-text part: sha256(bytes)[:16] → art:<hash>, write to disk"
+                            )
                             if n_att:
                                 for att in msg.attachments:
                                     fname = att.metadata.get("filename", "unnamed")
                                     fsize = format_bytes(att.metadata.get("size_bytes", 0))
-                                    print(f"     {DIM}OUT:{RESET} {CYAN}Attachment(kind=\"{att.kind}\", mime=\"{att.mime}\", ref=\"{att.ref}\", file=\"{fname}\", size={fsize}){RESET}")
+                                    print(
+                                        f'     {DIM}OUT:{RESET} {CYAN}Attachment(kind="{att.kind}", mime="{att.mime}", ref="{att.ref}", file="{fname}", size={fsize}){RESET}'
+                                    )
                             else:
                                 print(f"     {DIM}OUT:{RESET} {DIM}[]{RESET}")
                             print()
@@ -358,19 +376,25 @@ def main():
                             print(divider())
                             print(section("<<", "OUTPUT: ChannelMessage"))
                             print()
-                            print(f"     {DIM}channel         ={RESET} {WHITE}\"gmail\"{RESET}")
-                            print(f"     {DIM}channel_user_id ={RESET} {WHITE}\"{msg.channel_user_id}\"{RESET}")
+                            print(f'     {DIM}channel         ={RESET} {WHITE}"gmail"{RESET}')
+                            print(f'     {DIM}channel_user_id ={RESET} {WHITE}"{msg.channel_user_id}"{RESET}')
                             print(f"     {DIM}trust_level     ={RESET} {trust_color}{msg.trust_level}{RESET}")
-                            print(f"     {DIM}thread_id       ={RESET} {WHITE}\"{msg.thread_id}\"{RESET}")
-                            print(f"     {DIM}text            ={RESET} {WHITE}\"{(msg.text or '').strip()[:500]}\"{RESET}")
-                            print(f"     {DIM}arrived_at      ={RESET} {WHITE}{msg.arrived_at.strftime('%H:%M:%S.%f')[:-3]}{RESET}")
+                            print(f'     {DIM}thread_id       ={RESET} {WHITE}"{msg.thread_id}"{RESET}')
+                            print(
+                                f'     {DIM}text            ={RESET} {WHITE}"{(msg.text or "").strip()[:500]}"{RESET}'
+                            )
+                            print(
+                                f"     {DIM}arrived_at      ={RESET} {WHITE}{msg.arrived_at.strftime('%H:%M:%S.%f')[:-3]}{RESET}"
+                            )
                             if msg.attachments:
                                 print(f"     {DIM}attachments     ={RESET} {WHITE}[{RESET}")
                                 for att in msg.attachments:
                                     fname = att.metadata.get("filename", "unnamed")
                                     fsize = format_bytes(att.metadata.get("size_bytes", 0))
-                                    print(f"       {CYAN}Attachment(kind=\"{att.kind}\", mime=\"{att.mime}\", ref=\"{att.ref}\"){RESET}")
-                                    print(f"       {DIM}  filename=\"{fname}\", size={fsize}{RESET}")
+                                    print(
+                                        f'       {CYAN}Attachment(kind="{att.kind}", mime="{att.mime}", ref="{att.ref}"){RESET}'
+                                    )
+                                    print(f'       {DIM}  filename="{fname}", size={fsize}{RESET}')
                                 print(f"     {WHITE}]{RESET}")
                             else:
                                 print(f"     {DIM}attachments     ={RESET} {WHITE}[]{RESET}")
@@ -380,7 +404,9 @@ def main():
                             print(divider())
                             print(section("->", "OUTBOUND — adapter.send(ChannelReply)", ts()))
                             print()
-                            reply_text = f"[GLC Echo] Got your message: {msg.text[:500] if msg.text else '(empty)'}"
+                            reply_text = (
+                                f"[GLC Echo] Got your message: {msg.text[:500] if msg.text else '(empty)'}"
+                            )
                             reply = ChannelReply(
                                 channel="gmail",
                                 channel_user_id=msg.channel_user_id,
@@ -389,15 +415,23 @@ def main():
                             )
                             raw_mime = adapter._format_reply(reply)
                             print(f"  {BOLD}Step 1: _format_reply(ChannelReply){RESET}")
-                            print(f"     {DIM}IN:{RESET}  ChannelReply(to=\"{msg.channel_user_id}\", text=\"{reply_text[:50]}...\", thread=\"{msg.thread_id}\")")
-                            print(f"     {DIM}DO:{RESET}  EmailMessage() → To/From/In-Reply-To/Subject → base64url(bytes)")
-                            print(f"     {DIM}OUT:{RESET} {CYAN}\"{raw_mime[:70]}...\"{RESET}")
+                            print(
+                                f'     {DIM}IN:{RESET}  ChannelReply(to="{msg.channel_user_id}", text="{reply_text[:50]}...", thread="{msg.thread_id}")'
+                            )
+                            print(
+                                f"     {DIM}DO:{RESET}  EmailMessage() → To/From/In-Reply-To/Subject → base64url(bytes)"
+                            )
+                            print(f'     {DIM}OUT:{RESET} {CYAN}"{raw_mime[:70]}..."{RESET}')
                             print()
                             print(f"  {BOLD}Step 2: Gmail API messages.send(){RESET}")
-                            print(f"     {DIM}IN:{RESET}  {{\"raw\": \"{raw_mime[:40]}...\", \"threadId\": \"{msg.thread_id}\"}}")
+                            print(
+                                f'     {DIM}IN:{RESET}  {{"raw": "{raw_mime[:40]}...", "threadId": "{msg.thread_id}"}}'
+                            )
                             print(f"     {DIM}DO:{RESET}  POST gmail/v1/users/me/messages/send")
                             result = asyncio.run(adapter.send(reply))
-                            print(f"     {DIM}OUT:{RESET} {GREEN}{{\"id\": \"{result.get('id')}\", \"threadId\": \"{result.get('threadId')}\", \"labelIds\": [\"SENT\"]}}{RESET}")
+                            print(
+                                f'     {DIM}OUT:{RESET} {GREEN}{{"id": "{result.get("id")}", "threadId": "{result.get("threadId")}", "labelIds": ["SENT"]}}{RESET}'
+                            )
                             if result.get("id"):
                                 processed_ids.add(result["id"])
 
@@ -405,7 +439,9 @@ def main():
                         # need them. They auto-expire after 5 minutes via
                         # cleanup_expired() which runs each poll cycle.
                         if msg and msg.attachments:
-                            print(f"  {DIM}Artifacts stored: {len(msg.attachments)} file(s) — TTL 5min{RESET}")
+                            print(
+                                f"  {DIM}Artifacts stored: {len(msg.attachments)} file(s) — TTL 5min{RESET}"
+                            )
 
                         elapsed = (datetime.now(UTC) - msg.arrived_at).total_seconds() if msg else 0
                         print()

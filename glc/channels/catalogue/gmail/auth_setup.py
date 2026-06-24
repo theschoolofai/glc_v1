@@ -56,13 +56,17 @@ def setup_watch(creds: Credentials, topic: str) -> dict:
     from googleapiclient.discovery import build
 
     service = build("gmail", "v1", credentials=creds)
-    result = service.users().watch(
-        userId="me",
-        body={
-            "topicName": topic,
-            "labelIds": ["INBOX"],
-        },
-    ).execute()
+    result = (
+        service.users()
+        .watch(
+            userId="me",
+            body={
+                "topicName": topic,
+                "labelIds": ["INBOX"],
+            },
+        )
+        .execute()
+    )
     print(f"Watch registered: historyId={result['historyId']}, expiration={result['expiration']}")
     return result
 

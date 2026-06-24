@@ -183,16 +183,18 @@ class Adapter(ChannelAdapter):
             text_body = self._extract_text_plain(email_msg)
             attachments = self._extract_attachments(email_msg)
 
-            results.append(ChannelMessage(
-                channel="gmail",
-                channel_user_id=from_addr,
-                user_handle=from_addr,
-                text=text_body,
-                attachments=attachments,
-                thread_id=thread_id,
-                trust_level=trust_level,
-                arrived_at=datetime.now(UTC),
-            ))
+            results.append(
+                ChannelMessage(
+                    channel="gmail",
+                    channel_user_id=from_addr,
+                    user_handle=from_addr,
+                    text=text_body,
+                    attachments=attachments,
+                    thread_id=thread_id,
+                    trust_level=trust_level,
+                    arrived_at=datetime.now(UTC),
+                )
+            )
 
         return results
 
@@ -327,8 +329,13 @@ class Adapter(ChannelAdapter):
             disposition = str(part.get("Content-Disposition") or "")
             filename = part.get_filename()
 
-            if content_type in ("text/plain", "text/html", "multipart/mixed",
-                                "multipart/alternative", "multipart/related"):
+            if content_type in (
+                "text/plain",
+                "text/html",
+                "multipart/mixed",
+                "multipart/alternative",
+                "multipart/related",
+            ):
                 continue
 
             if not filename and "attachment" not in disposition:
@@ -352,15 +359,17 @@ class Adapter(ChannelAdapter):
             ref = artifact_store(raw, filename=filename or "unnamed")
             kind = self._classify_attachment_kind(content_type)
 
-            attachments.append(Attachment(
-                kind=kind,
-                ref=ref,
-                mime=content_type,
-                metadata={
-                    "filename": filename or "unnamed",
-                    "size_bytes": len(raw),
-                },
-            ))
+            attachments.append(
+                Attachment(
+                    kind=kind,
+                    ref=ref,
+                    mime=content_type,
+                    metadata={
+                        "filename": filename or "unnamed",
+                        "size_bytes": len(raw),
+                    },
+                )
+            )
 
         return attachments
 
@@ -466,27 +475,42 @@ class _LiveGmailClient:
 
     def history_list(self, start_history_id: int) -> dict:
         try:
-            return self._service.users().history().list(
-                userId="me",
-                startHistoryId=str(start_history_id),
-                historyTypes=["messageAdded"],
-            ).execute()
+            return (
+                self._service.users()
+                .history()
+                .list(
+                    userId="me",
+                    startHistoryId=str(start_history_id),
+                    historyTypes=["messageAdded"],
+                )
+                .execute()
+            )
         except Exception as e:
             logger.error("Gmail history.list failed: %s", e)
             return {"history": []}
 
     def messages_get(self, message_id: str) -> dict:
-        return self._service.users().messages().get(
-            userId="me",
-            id=message_id,
-            format="raw",
-        ).execute()
+        return (
+            self._service.users()
+            .messages()
+            .get(
+                userId="me",
+                id=message_id,
+                format="raw",
+            )
+            .execute()
+        )
 
     async def send(self, payload: dict) -> dict:
-        return self._service.users().messages().send(
-            userId="me",
-            body=payload,
-        ).execute()
+        return (
+            self._service.users()
+            .messages()
+            .send(
+                userId="me",
+                body=payload,
+            )
+            .execute()
+        )
 
     def pop_disconnect(self) -> bool:
         return False
