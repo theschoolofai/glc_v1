@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from dataclasses import dataclass
 
 WS_URL = (
     "wss://generativelanguage.googleapis.com/ws/"
@@ -55,3 +56,9 @@ def build_client_content_frame(text: str) -> dict[str, Any]:
 def ws_url(api_key: str) -> str:
     """Authenticated WebSocket endpoint."""
     return f"{WS_URL}?key={api_key}"
+
+@dataclass
+class TTSPolicyConfig:
+    input_max_len: int
+    input_min_len: int
+    output_max_size: int
