@@ -7,25 +7,28 @@ import io
 import json
 import os
 import wave
+from typing import Any
 
 import websockets
 
 from glc.voice.tts.base import SynthesizeResult, TTSError, TTSProvider
+from glc.voice.tts.providers.gemini_live.policy import TTSPolicy
 from glc.voice.tts.providers.gemini_live.schemas import (
     DEFAULT_SAMPLE_RATE,
+    TTSPolicyConfig,
     build_client_content_frame,
     build_setup_frame,
+    cost_from_usage,
     ws_url,
 )
-from glc.voice.tts.providers.gemini_live.policy import TTSPolicy
-from glc.voice.tts.providers.gemini_live.schemas import TTSPolicyConfig
 
-#inout text size     
+# inout text size
 input_text_max_length = int(os.getenv("GEMINI_LIVE_TTS_INPUT_TEXT_MAX_LENGTH", 1000))
-input_text_min_length = int(os.getenv("GEMINI_LIVE_TTS_INPUT_TEXT_MIN_LENGTH", 1))
+input_text_min_length = int(os.getenv("GEMINI_LIVE_TTS_INPUT_TEXT_MIN_LENGTH", 0))
 
-#output audio size
+# output audio size
 output_audio_max_size = int(os.getenv("GEMINI_LIVE_TTS_OUTPUT_AUDIO_MAX_SIZE", 5 * 1024 * 1024))
+
 
 class Provider(TTSProvider):
     name = "gemini_live"
@@ -34,8 +37,9 @@ class Provider(TTSProvider):
         super().__init__(config)
         policy_config = TTSPolicyConfig(input_text_max_length, input_text_min_length, output_audio_max_size)
         self.policy = TTSPolicy(policy_config)
+
     async def synthesize(self, text: str, voice_id: str | None = None) -> SynthesizeResult:
-        #validate input text
+        # validate input text
         self.policy.validate_input(text)
         setup_frame = build_setup_frame(voice_id)
 
@@ -54,6 +58,7 @@ class Provider(TTSProvider):
         url = ws_url(api_key)
         pcm_chunks: list[bytes] = []
         sample_rate = DEFAULT_SAMPLE_RATE
+        last_usage: dict[str, Any] | None = None
 
         try:
             async with websockets.connect(url) as ws:
@@ -64,6 +69,11 @@ class Provider(TTSProvider):
 
                 async for raw in ws:
                     msg = json.loads(raw)
+                    # usageMetadata arrives on frames without serverContent, so
+                    # capture it before the guard below skips them. Gemini sends
+                    # cumulative totals; keep the last one seen.
+                    if (u := msg.get("usageMetadata")) is not None:
+                        last_usage = u
                     server_content = msg.get("serverContent")
                     if not server_content:
                         continue
@@ -84,14 +94,14 @@ class Provider(TTSProvider):
             raise TTSError(f"gemini_live upstream error: {e}", status=502) from e
 
         wav_bytes = self._pcm_to_wav(b"".join(pcm_chunks), sample_rate)
-        #validate output audio size
+        # validate output audio size
         self.policy.validate_output(wav_bytes)
         return SynthesizeResult(
             audio_b64=base64.b64encode(wav_bytes).decode("ascii"),
             mime="audio/wav",
             sample_rate=sample_rate,
             provider=self.name,
-            cost_usd=0.0,
+            cost_usd=cost_from_usage(last_usage),
         )
 
     @staticmethod

@@ -34,6 +34,25 @@ audio, so the seven structural + behavioural tests run offline.
 - `GEMINI_API_KEY` — appended as a `?key=` query param. The adapter
   raises `TTSError(status=401)` if it's missing.
 
+## Cost accounting
+
+The server interleaves `usageMetadata` frames carrying token counts. The
+read loop keeps the last one and `schemas.cost_from_usage()` turns it into an
+estimate: text prompt tokens at the input rate, the audio response at the
+audio-output rate. This populates `SynthesizeResult.cost_usd`, which the
+dispatcher returns as `SpeakResponse.cost_usd` from `POST /v1/speak`.
+
+`cost_usd` is a **list-price estimate** from the reported token counts, not
+what you are actually billed (the free tier bills $0). If no `usageMetadata`
+frame arrives, it stays `0.0`.
+
+Rates are USD per 1M tokens, overridable via env:
+
+- `GEMINI_LIVE_INPUT_USD_PER_MTOK` — text input (default `1.00`).
+- `GEMINI_LIVE_OUTPUT_AUDIO_USD_PER_MTOK` — audio output (default `20.00`).
+
+Source: <https://ai.google.dev/gemini-api/docs/pricing> (verified 2026-06-23).
+
 ## Channel quirks we hit
 
 - **`responseModalities` defaults to TEXT.** No error, no warning,
@@ -78,31 +97,41 @@ between us and that regression.
 ## Running it for real (demo)
 
 ```sh
-export GEMINI_API_KEY=...
+export GEMINI_API_KEY=...                  # PowerShell: $env:GEMINI_API_KEY="..."
 uv run python -m glc.voice.tts.providers.gemini_live.smoke "hello from glc"
-afplay /tmp/gemini_live_out.wav   # macOS
 ```
 
-`smoke.py` calls the real adapter (no mock), writes the resulting WAV
-to `/tmp/gemini_live_out.wav`, and prints provider metadata plus three
-latency numbers (`total_ms`, `audio_ms`, `realtime_factor`).
+`smoke.py` calls the real adapter (no mock), writes the resulting WAV to
+`gemini_live_out.wav` in the OS temp dir (`%TEMP%` on Windows, `/tmp` or
+`$TMPDIR` on macOS/Linux), and prints provider metadata, the estimated
+`cost_usd`, and three latency numbers (`total_ms`, `audio_ms`,
+`realtime_factor`). Play back the path shown on the `wrote:` line:
 
-Measured against the real Gemini Live free tier with the sentence
-*"Hello from G L C version one. Gemini Live smoke test."*:
+```sh
+afplay "$TMPDIR/gemini_live_out.wav"        # macOS
+aplay  /tmp/gemini_live_out.wav             # Linux
+start  "%TEMP%\gemini_live_out.wav"         # Windows (or: ffplay <path>)
+```
+
+Measured against the real Gemini Live free tier with the input
+*"hello from glc"* (Windows):
 
 ```
 provider:        gemini_live
 mime:            audio/wav
 sample_rate:     24000 Hz
-wav_bytes:       429,674
-total_ms:        10672.1
-audio_ms:         8950.6
-realtime_factor:    0.84x
-wrote:           /tmp/gemini_live_out.wav
+cost_usd:        0.002323
+wav_bytes:       195,406
+total_ms:         5407.6
+audio_ms:         4070.0
+realtime_factor:    0.75x
+wrote:           <os-temp-dir>\gemini_live_out.wav
 ```
 
-`realtime_factor < 1` means `synthesize()` returned slightly slower
-than the audio plays — because it waits for the *full* turn before
-returning. The sub-second voice budget in §9 needs a streaming
-surface that yields chunks as they arrive; that surface is a future
-PR on top of this provider.
+`cost_usd` is the list-price estimate from the turn's `usageMetadata` (see
+[Cost accounting](#cost-accounting)). `realtime_factor < 1` means
+`synthesize()` returned slower than the audio plays — because it waits for
+the *full* turn before returning; short clips are dominated by fixed
+round-trip overhead. The sub-second voice budget in §9 needs a streaming
+surface that yields chunks as they arrive; that surface is a future PR on
+top of this provider.
