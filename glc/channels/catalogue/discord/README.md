@@ -1,49 +1,69 @@
-# Discord Gateway
+# Discord Gateway adapter — `feat/mkthoma-discord-demo`
 
-This is a **group assignment** in Session 11. Implement the discord adapter
-to make the test suite at `tests/channels/test_discord.py` pass.
+Slot `discord` (group **Discord**, chat `G2`). This README scopes what **this
+feature branch** commits and what is still outstanding.
 
-## What you build
+This branch is an **incremental** step: it adds the Discord wire-format
+**schemas only**. `adapter.py` is still the maintainer-provided stub —
+implementing it (and making the 7-test rubric pass) is the next step, not part
+of this commit.
 
-Two files under this directory:
+## What this branch does
 
-- `adapter.py` — subclass `glc.channels.base.ChannelAdapter` and implement
-  `on_message(raw) -> ChannelMessage` and `send(reply) -> Any`.
-- `schemas.py` — any channel-specific Pydantic types you need.
+One file inside the slot's owned path (`glc/channels/catalogue/discord/`):
 
-## Required environment variables
+### `schemas.py` — Discord wire-format types
 
-- `DISCORD_BOT_TOKEN`
+Pydantic models for the frames the adapter will consume and produce — they
+model the `MESSAGE_CREATE` gateway frame and the create-message REST body:
 
-## Free-tier limits
+- `DiscordUser`, `DiscordMessage`, `DiscordGatewayEvent` — **inbound**, with
+  `extra="ignore"` so Discord's evolving / multiplexed payloads don't crash
+  parsing.
+- `DiscordCreateMessageBody` — **outbound** REST body, with `extra="forbid"`
+  and `tts` defaulting to `False` (the bot never speaks unprompted).
+- Snowflake ids are kept as strings, never coerced to int.
 
-Free for any guild the bot is invited into. WebSocket gateway shard limits apply at scale.
+The canonical `ChannelMessage` / `ChannelReply` envelope is **not** redefined
+here — it lives in `glc.channels.envelope`.
 
-## Wire-format quirks to expect
+### Verification
 
-Discord delivers events over a heartbeated WebSocket gateway. Embeds and components are separate from `content`. Public channels require explicit mention to address the bot.
+Run from the repo root (`C:\Users\akenn\GitHub\glc_v1_g2_discord`):
 
-## Tests you need to pass
+```powershell
+uv run ruff check glc/channels/catalogue/discord/  # All checks passed!
+uv run mypy  glc/channels/catalogue/discord/       # no issues found
+```
 
-The failing tests live at `tests/channels/test_discord.py`. They cover:
+> **Note:** `uv run pytest tests/channels/test_discord.py` does **not** pass yet.
+> The 7 tests exercise the adapter, which is still a stub (`raise
+> NotImplementedError`). `schemas.py` imports and type-checks cleanly on its own;
+> the suite goes green only once `adapter.py` is implemented (below).
 
-1. `on_message` builds a valid `ChannelMessage` for owner and stranger inputs.
-2. Trust level resolves to `owner_paired` / `user_paired` / `untrusted` correctly.
-3. `send` produces a valid wire-format payload and reaches the mock.
-4. The adapter handles forced disconnects without raising.
-5. Rate-limit responses propagate to the caller as a 429.
-6. In public channels with the default `mention_only_in_public: true`, the
-   adapter consults the allowlist before processing strangers.
+## What still needs to be done
 
-The mock-API fake at `tests/channels/mocks/discord_mock.py` is your contract
-surface. Do **not** edit the mock or the test file — they are fixed.
+- [ ] **Implement `adapter.py`** — `on_message` + `send`, subclassing
+  `glc.channels.base.ChannelAdapter`. This is what turns the 7-test rubric green:
+  lazy gateway-frame parsing, `trust_level` stamped via
+  `glc.security.trust_level.classify` before the envelope is built, the public-
+  channel allowlist gate via `glc.security.allowlists.allowed`, `<@id>` mention
+  resolution via the client's `get_user`, graceful forced-disconnect handling,
+  and 429 passthrough on `send`. Currently raises `NotImplementedError`.
+- [ ] **Demo video (required by the PR template).** Record a real upstream
+  Discord message handled end to end — the tests only exercise the in-memory
+  mock. Needs a real bot token (`DISCORD_BOT_TOKEN` with the **MESSAGE_CONTENT**
+  privileged intent) and the live Gateway/REST path.
+- [ ] **PR body.** Fill in the group **members** line and the **demo link**, and
+  add the short "wire-format quirks you hit" note. Keep the
+  `# Group: Discord` / `# Slot: discord` markers intact.
+- [ ] **Tidy `__init__.py`.** Its docstring still reads `"Discord Gateway
+  adapter (stub)."` — drop "(stub)" once the adapter is implemented.
 
-## Submission
+## Out of scope for this branch
 
-Open a PR that:
-
-- Adds your `adapter.py` and `schemas.py`.
-- Passes `pytest tests/channels/test_discord.py`.
-- Updates `CLAIMS.md` if you have not already claimed this channel.
-
-CI gates merge through branch protection. A TA reviews before merge.
+- The shared envelope, trust, pairing, and allowlist modules (`glc.channels.*`,
+  `glc.security.*`) — already in `main` and owned by the maintainers; editing
+  them would fail the boundary check.
+- The test and mock files (`tests/channels/test_discord.py`,
+  `tests/channels/mocks/discord_mock.py`) — fixed contract, do not edit.
