@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from glc.channels.base import ChannelAdapter
@@ -19,7 +19,7 @@ _WAV_HEADER_BYTES = 44
 class Adapter(ChannelAdapter):
     name = "local_mic"
 
-    async def on_message(self, raw: Any) -> ChannelMessage | None:
+    async def on_message(self, raw: Any) -> ChannelMessage | None:  # type: ignore[override]
         mock = self.config.get("mock")
 
         if mock is not None and mock.pop_disconnect():
@@ -53,7 +53,7 @@ class Adapter(ChannelAdapter):
             text=result.text,
             voice_audio_ref=art_ref,
             trust_level=trust_level,
-            arrived_at=datetime.now(timezone.utc),
+            arrived_at=datetime.now(UTC),
         )
 
     async def send(self, reply: ChannelReply) -> Any:
