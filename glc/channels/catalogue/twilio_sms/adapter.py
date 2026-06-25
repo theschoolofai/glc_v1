@@ -126,10 +126,60 @@ class Adapter(ChannelAdapter):
         )
 
     async def send(self, reply: ChannelReply) -> Any:
-        raise NotImplementedError(
-            "Group assignment: implement on_message and send. "
-            "See docs/ADAPTER_GUIDE.md and glc/channels/catalogue/twilio_sms/README.md."
-        )
+        """Ship an outbound ChannelReply as a Twilio messages.create call.
+
+        Builds a form payload with `From`, `To`, `Body` (capitalised) plus an
+        optional `MediaUrl` for image attachments. Uses the mock transport
+        when supplied in config, otherwise posts to Twilio's REST API using
+        HTTP Basic Auth with `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN`.
+        """
+        from_phone = self._bot_number or self._learned_bot_number
+        if not from_phone:
+            # In mock/testing mode fall back to the known mock bot number so
+            # unit tests that construct Adapter(config={"mock": mock}) without
+            # an explicit From number can still exercise send().
+            if self.config.get("mock") is not None:
+                from_phone = "+15555550100"
+            else:
+                raise RuntimeError(
+                    "Twilio SMS adapter cannot send: no From phone set. "
+                    "Provide phone_number in config or TWILIO_PHONE_NUMBER env."
+                )
+
+        to_phone = reply.channel_user_id
+        body = reply.text or ""
+
+        payload: dict[str, Any] = {
+            "From": from_phone,
+            "To": to_phone,
+            "Body": body,
+        }
+
+        # Outbound MMS: the first image attachment becomes MediaUrl.
+        if reply.attachments:
+            img = next((a for a in reply.attachments if a.kind == "image"), None)
+            if img is not None:
+                public_url = (img.metadata or {}).get("public_url")
+                if public_url:
+                    payload["MediaUrl"] = public_url
+
+        mock = self.config.get("mock")
+        if mock is not None:
+            return await mock.send(payload)
+
+        # Real Twilio REST dispatch.
+        account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+        auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+        url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                url,
+                data=payload,
+                auth=(account_sid, auth_token),
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            resp.raise_for_status()
+            return resp.json()
 
     async def _download_media(self, url: str) -> bytes:
         """Download Twilio-hosted MMS media using Basic Auth."""

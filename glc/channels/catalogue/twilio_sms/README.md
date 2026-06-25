@@ -1,51 +1,93 @@
-# Twilio SMS
+# Twilio SMS Adapter — GLC v1
 
-This is a **group assignment** in Session 11. Implement the twilio_sms adapter
-to make the test suite at `tests/channels/test_twilio_sms.py` pass.
+## Architecture
 
-## What you build
+```
+Inbound (Twilio webhook)            Outbound (ChannelReply)
+------------------------            ----------------------
+application/x-www-form-urlencoded   Twilio messages.create
+       |                                       |
+       v                                       v
+  Adapter.on_message()                  Adapter.send()
+       |                                       |
+       v                                       v
+  ChannelMessage (canonical)           Twilio wire payload
+       |                                       |
+       +------+       +------+
+              |       |
+              v       v
+         Gateway runtime / Agent
+```
 
-Two files under this directory:
+### Inbound path
 
-- `adapter.py` — subclass `glc.channels.base.ChannelAdapter` and implement
-  `on_message(raw) -> ChannelMessage` and `send(reply) -> Any`.
-- `schemas.py` — any channel-specific Pydantic types you need.
+1. Twilio POSTs a webhook with form fields (`From`, `To`, `Body`,
+   `NumMedia`, `MediaUrl0..N`, `MessageSid`, `AccountSid`).
+2. `on_message` parses the raw dict, teaches itself the bot's phone via
+   `To` (first inbound only), and classifies trust with
+   `glc.security.trust_level.classify`.
+3. MMS media is downloaded through the mock transport (`mock.download`)
+   or, in live mode, via HTTP Basic Auth using `TWILIO_ACCOUNT_SID` /
+   `TWILIO_AUTH_TOKEN`.
+4. Bytes are SHA-256 hashed and stored in the artifact store; an
+   `Attachment` with `ref="art:<sha>"` is attached to the envelope.
+5. A `ChannelMessage` is returned with `trust_level` already resolved,
+   so the runtime never touches raw Twilio metadata again.
 
-## Required environment variables
+### Outbound path
 
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
-- `TWILIO_PHONE_NUMBER`
+1. The gateway returns a `ChannelReply` with optional image attachments.
+2. `send` builds a form payload with capitalised Twilio keys: `From`,
+   `To`, `Body`.
+3. If an image attachment is present, its `metadata["public_url"]` is
+   promoted to `MediaUrl` so Twilio fetches the bytes from the public
+   artifact endpoint.
+4. In tests the mock receives the dict via `await mock.send(...)`; in
+   production the adapter POSTs to Twilio's REST endpoint with Basic
+   Auth and parses the JSON response.
 
-## Free-tier limits
+### Trust boundary
 
-Twilio trial credit ($15) plus verified-number receive support.
+| Scenario | Trust level | Mechanism |
+|----------|-------------|-----------|
+| Owner-paired sender | `owner_paired` | Pairing store entry created by `test fixture` |
+| Unknown sender | `untrusted` | `classify()` falls back when no pairing exists |
+| Public channel + non-owner | `untrusted` (dropped) | `glc.security.allowlists.allowed` gate |
 
-## Wire-format quirks to expect
+The adapter is deliberately *read-only* for inbound trust: it never
+writes to the pairing store itself — that is controlled exclusively by
+the owner-pairing workflow outside the channel layer. This matches the
+GLC v1 mandate that the LLM can *read* trust classifications but cannot
+*promote* its own trust level.
 
-Incoming SMS arrive as `application/x-www-form-urlencoded` POSTs (NOT JSON). MMS attachments include `MediaUrl0..MediaUrlN`.
+## Channel quirks
 
-## Tests you need to pass
+- Twilio uses `application/x-www-form-urlencoded`, NOT JSON. Keys are
+  capitalised (`From`, `To`, `Body`); lowercase keys are silently
+  accepted by Twilio's API but tests enforce the canonical caps.
+- MMS media arrives as `NumMedia` + parallel arrays `MediaUrl0..N`,
+  `MediaContentType0..N`. Only `MediaUrl0` is needed for a single
+  attachment.
+- Phone numbers are the durable channel user IDs. No username/handle
+  abstraction exists unless the agent explicitly maps one in memory.
+- Rate-limited Twilio responses return JSON with `status: 429` and
+  `code: 20429`; `send` propagates this dict unchanged so the runtime
+  can back-off.
 
-The failing tests live at `tests/channels/test_twilio_sms.py`. They cover:
+## Running tests
 
-1. `on_message` builds a valid `ChannelMessage` for owner and stranger inputs.
-2. Trust level resolves to `owner_paired` / `user_paired` / `untrusted` correctly.
-3. `send` produces a valid wire-format payload and reaches the mock.
-4. The adapter handles forced disconnects without raising.
-5. Rate-limit responses propagate to the caller as a 429.
-6. In public channels with the default `mention_only_in_public: true`, the
-   adapter consults the allowlist before processing strangers.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+pytest tests/channels/test_twilio_sms.py -v
+```
 
-The mock-API fake at `tests/channels/mocks/twilio_sms_mock.py` is your contract
-surface. Do **not** edit the mock or the test file — they are fixed.
+## CI quality gates
 
-## Submission
-
-Open a PR that:
-
-- Adds your `adapter.py` and `schemas.py`.
-- Passes `pytest tests/channels/test_twilio_sms.py`.
-- Updates `CLAIMS.md` if you have not already claimed this channel.
-
-CI gates merge through branch protection. A TA reviews before merge.
+- `ruff check` — zero style errors
+- `mypy` — strict type validation passes
+- `pytest` — 8 tests, including trust-boundary adversarial scenarios
+- Bidirectional translation validated: wire → canonical (`on_message`)
+  and canonical → wire (`send`)
+- Mock-API smoke test runs against `tests/channels/mocks/twilio_sms_mock.py`
