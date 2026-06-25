@@ -52,6 +52,15 @@ def parse_meta_payload(body: dict) -> dict[str, Any] | None:
     }
 
 
+def build_meta_send_payload(reply: ChannelReply) -> dict[str, Any]:
+    return {
+        "messaging_product": "whatsapp",
+        "to": reply.channel_user_id,
+        "type": "text",
+        "text": {"body": reply.text},
+    }
+
+
 class Adapter(ChannelAdapter):
     name = "whatsapp"
 
@@ -62,7 +71,8 @@ class Adapter(ChannelAdapter):
         )
 
     async def send(self, reply: ChannelReply) -> Any:
-        raise NotImplementedError(
-            "Group assignment: implement on_message and send. "
-            "See docs/ADAPTER_GUIDE.md and glc/channels/catalogue/whatsapp/README.md."
-        )
+        body = build_meta_send_payload(reply)
+        mock = self.config.get("mock")
+        if mock is not None:
+            return await mock.send(body)
+        return body
