@@ -136,3 +136,31 @@ async def test_channel_specific_behaviour_mms_media_persists_as_artifact(mock, p
     await adapter.send(reply)
     out = mock.send_log[-1]
     assert "MediaUrl" in out or "MediaUrl0" in out, "outbound MMS must include MediaUrl(0)"
+
+
+@pytest.mark.asyncio
+async def test_send_multi_mms_emits_multiple_media_urls(mock, pair_owner):
+    adapter = Adapter(config={"mock": mock})
+    reply = ChannelReply(
+        channel="twilio_sms",
+        channel_user_id=OWNER_ID,
+        text="reply with multiple images",
+        attachments=[
+            Attachment(
+                kind="image",
+                ref="art:img1",
+                metadata={"public_url": "https://glc.example/artifacts/img1"},
+            ),
+            Attachment(
+                kind="image",
+                ref="art:img2",
+                metadata={"public_url": "https://glc.example/artifacts/img2"},
+            ),
+        ],
+    )
+    await adapter.send(reply)
+    out = mock.send_log[-1]
+    assert out.get("MediaUrl") == [
+        "https://glc.example/artifacts/img1",
+        "https://glc.example/artifacts/img2",
+    ]
