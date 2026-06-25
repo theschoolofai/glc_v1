@@ -17,8 +17,9 @@ A single module-level helper function in `adapter.py`:
 def verify_meta_signature(raw_body: bytes, headers: dict) -> bool:
 ```
 
-It is the **exact mirror** of `_sign()` in `tests/channels/mocks/whatsapp_mock.py` —
+It is the **inverse** of `_sign()` in `tests/channels/mocks/whatsapp_mock.py` —
 the mock signs webhooks with HMAC-SHA256; this function verifies them.
+(`_sign` creates a signature; `verify_meta_signature` checks one — same algorithm, opposite roles.)
 
 ### Algorithm (HMAC-SHA256, Meta Cloud API)
 
@@ -84,20 +85,18 @@ returns False → `on_message` returns None. If True → continue to parse + cla
 
 ### Pre-flight
 
-- [ ] Confirm active branch is `feature/us3-verify-meta-signature`
-      (`git branch --show-current`)
-- [ ] Confirm `WHATSAPP_APP_SECRET` is present in `.env`
-      (set during US-1; value = `DEFAULT_APP_SECRET = "test-app-secret"` in the mock
-      for local test runs; real value from Meta Developer Console for live tests)
-- [ ] Re-read `_sign()` in [whatsapp_mock.py](../../../../../../../tests/channels/mocks/whatsapp_mock.py)
-      (lines 86-87) — the function to implement is its exact inverse
+- [x] Confirm active branch is `feature/us3-verify-meta-signature`
+- [x] Confirm `WHATSAPP_APP_SECRET` is present in `.env`
+      (value = `"test-app-secret"` for local runs; real value from Meta Developer Console for live tests)
+- [x] Re-read `_sign()` in [whatsapp_mock.py](../../../../../../../tests/channels/mocks/whatsapp_mock.py)
+      (lines 86-87) — `verify_meta_signature` is its inverse
 
 ### Implementation
 
-- [ ] Open [adapter.py](../../../adapter.py)
-- [ ] Add imports at the top (after `from __future__ import annotations`):
+- [x] Open [adapter.py](../../../adapter.py)
+- [x] Add imports at the top (after `from __future__ import annotations`):
       `import hashlib`, `import hmac`, `import os`
-- [ ] Add `verify_meta_signature` as a **module-level function** (before the `Adapter` class):
+- [x] Added `verify_meta_signature` as a **module-level function** (before the `Adapter` class):
   ```python
   def verify_meta_signature(raw_body: bytes, headers: dict) -> bool:
       secret = os.environ.get("WHATSAPP_APP_SECRET", "")
@@ -107,80 +106,30 @@ returns False → `on_message` returns None. If True → continue to parse + cla
       expected = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
       return hmac.compare_digest(expected, sig_header.removeprefix("sha256="))
   ```
-- [ ] Verify the function signature exactly matches the HANDOFF §7.3 spec:
-  - Parameter 1: `raw_body: bytes` (the raw, unparsed webhook body)
-  - Parameter 2: `headers: dict` (the HTTP request headers dict)
+- [x] Function signature matches HANDOFF §7.3 spec:
+  - Parameter 1: `raw_body: bytes`
+  - Parameter 2: `headers: dict`
   - Return: `bool`
-- [ ] Do NOT modify `on_message` or `send` — those remain `NotImplementedError` stubs
+- [x] `on_message` and `send` remain `NotImplementedError` stubs — not touched
 
 ### Manual verification (3 required cases per HANDOFF §7.3)
 
-Run this one-liner in a terminal from the project root to confirm all 3 cases:
+- [x] Case 1 — unsigned (`headers={}`) → `False` **PASS**
+- [x] Case 2 — tampered (wrong secret in header) → `False` **PASS**
+- [x] Case 3 — valid (correct HMAC) → `True` **PASS**
 
-```bash
-uv run python - <<'EOF'
-import os, json
-os.environ["WHATSAPP_APP_SECRET"] = "test-app-secret"
+### Quality gates
 
-from glc.channels.catalogue.whatsapp.adapter import verify_meta_signature
-import hmac, hashlib
-
-body = b'{"object":"whatsapp_business_account"}'
-secret = "test-app-secret"
-correct_sig = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-wrong_sig   = "sha256=" + hmac.new(b"WRONG", body, hashlib.sha256).hexdigest()
-
-# Case 1: Unsigned — no header
-assert verify_meta_signature(body, {}) is False, "FAIL: unsigned must return False"
-print("PASS  Case 1: unsigned → False")
-
-# Case 2: Tampered — wrong secret
-assert verify_meta_signature(body, {"X-Hub-Signature-256": wrong_sig}) is False, \
-    "FAIL: tampered must return False"
-print("PASS  Case 2: tampered → False")
-
-# Case 3: Valid — correct HMAC
-assert verify_meta_signature(body, {"X-Hub-Signature-256": correct_sig}) is True, \
-    "FAIL: valid must return True"
-print("PASS  Case 3: valid → True")
-
-print("\nAll 3 manual cases passed.")
-EOF
-```
-
-- [ ] Case 1 passes: unsigned webhook → `False`
-- [ ] Case 2 passes: tampered webhook (wrong secret) → `False`
-- [ ] Case 3 passes: correctly signed webhook → `True`
-
-### Quality gates (required before mini-PR per US-12)
-
-```bash
-ruff check glc/channels/catalogue/whatsapp/
-```
-- [ ] `ruff` reports zero errors or warnings
-
-```bash
-mypy glc/channels/catalogue/whatsapp/
-```
-- [ ] `mypy` reports zero errors
-
-```bash
-uv run python scripts/check_pr_boundaries.py --base main --head HEAD --group "Group WhatsApp"
-```
-- [ ] Boundary check passes (only files under `glc/channels/catalogue/whatsapp/` changed)
+- [x] `ruff check glc/channels/catalogue/whatsapp/` → **All checks passed**
+- [x] `mypy glc/channels/catalogue/whatsapp/` → **Success: no issues found in 5 source files**
+- [x] `check_pr_boundaries.py --base integration --head HEAD` → **OK: 2 file(s) changed, all inside 'Group WhatsApp' owned paths**
+      *(Note: use `--base integration` not `--base main` — local fork has no local `main` branch; script diffs commits so run after staging)*
 
 ### Commit
 
-- [ ] Stage only the owned path:
-  ```bash
-  git add glc/channels/catalogue/whatsapp/adapter.py
-  ```
-- [ ] Confirm no other files are staged (`git status`)
-- [ ] Commit:
-  ```bash
-  git commit -m "US-3: verify_meta_signature — HMAC-SHA256 over raw body, constant-time compare"
-  ```
-- [ ] Push:
+- [x] Staged: `glc/channels/catalogue/whatsapp/adapter.py` + `help_docs/US3_verify_meta_signature/`
+- [x] Committed: `dbf3a0b` — `US-3: verify_meta_signature — HMAC-SHA256 over raw body, constant-time compare`
+- [x] Push:
   ```bash
   git push -u origin feature/us3-verify-meta-signature
   ```
@@ -193,6 +142,7 @@ uv run python scripts/check_pr_boundaries.py --base main --head HEAD --group "Gr
   - **title:** `US-3: verify_meta_signature`
   - **body:** document the 3 manual verification cases and their results
 - [ ] PR description confirms: no `on_message` changes, no secret hardcoded, 3 cases verified manually
+- [ ] Mini-PR approved and merged to `integration`
 
 ---
 
