@@ -57,4 +57,15 @@ class Adapter(ChannelAdapter):
         )
 
     async def send(self, reply: ChannelReply) -> Any:
-        raise NotImplementedError("send not yet implemented")
+        mock = self.config.get("mock")
+
+        if mock is not None and mock.rate_limited:
+            return {"status": 429, "error": "tts rate limit"}
+
+        tts_result = await tts_router.synthesize(reply.text or "")
+        audio_bytes = base64.b64decode(tts_result.audio_b64)
+
+        if mock is not None:
+            await mock.play(audio_bytes)
+
+        return {"status": 200}
