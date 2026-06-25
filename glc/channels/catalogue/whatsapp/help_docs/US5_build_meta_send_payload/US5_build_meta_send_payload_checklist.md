@@ -22,7 +22,7 @@ text message send:
 
 ```
 POST https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages
-Authorization: Bearer {WHATSAPP_TOKEN}
+Authorization: Bearer {WHATSAPP_TOKEN} 
 Content-Type: application/json
 ```
 
