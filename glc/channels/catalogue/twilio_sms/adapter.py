@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from glc.channels.base import ChannelAdapter
@@ -48,7 +48,7 @@ class Adapter(ChannelAdapter):
                 user_handle="unknown",
                 text=None,
                 trust_level="untrusted",
-                arrived_at=datetime.now(timezone.utc),
+                arrived_at=datetime.now(UTC),
             )
 
         # raw is the parsed form dict (dict[str, str]).
@@ -83,7 +83,7 @@ class Adapter(ChannelAdapter):
                 art_handle: str = mock.store_artifact(sha, media_bytes)
 
                 content_type: str = payload.get(f"MediaContentType{i}", "image/jpeg")
-                kind = "image" if content_type.startswith("image/") else "file"
+                kind: Literal["image", "file"] = "image" if content_type.startswith("image/") else "file"
                 attachments.append(
                     Attachment(
                         kind=kind,
@@ -115,7 +115,7 @@ class Adapter(ChannelAdapter):
             text=text,
             attachments=attachments,
             trust_level=trust_level,
-            arrived_at=datetime.now(timezone.utc),
+            arrived_at=datetime.now(UTC),
             metadata={
                 "message_sid": payload.get("MessageSid", ""),
                 "account_sid": payload.get("AccountSid", ""),
