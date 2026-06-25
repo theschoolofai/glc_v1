@@ -1,0 +1,118 @@
+flowchart TD
+    classDef prep fill:#fff3cd,stroke:#b8860b,color:#000,stroke-width:1px
+    classDef fixed fill:#e2e2e2,stroke:#777,color:#000,stroke-width:1px
+    classDef yours fill:#d4edda,stroke:#28a745,color:#000,stroke-width:1px
+    classDef shared fill:#cfe2ff,stroke:#0d6efd,color:#000,stroke-width:1px
+    classDef demo fill:#f8d7da,stroke:#c0392b,color:#000,stroke-width:1px
+    classDef backlog fill:#ede7f6,stroke:#5e35b1,color:#000,stroke-width:1px,stroke-dasharray: 4 3
+    classDef gate fill:#ffe0b2,stroke:#e65100,color:#000,stroke-width:2px
+    classDef twilio fill:#d1f2eb,stroke:#0e6655,color:#000,stroke-width:1px
+
+    subgraph WAVE1META["WAVE 1a — Meta helpers, parallel, zero deps"]
+        direction LR
+        S1["US-1<br/>Meta wiring<br/>§8"]:::prep
+        S3["US-3<br/>verify_meta<br/>_signature"]:::yours
+        S4["US-4<br/>parse_meta<br/>_payload"]:::yours
+        S5["US-5<br/>build_meta<br/>_send_payload"]:::yours
+    end
+
+    subgraph WAVE1TWILIO["WAVE 1b — Twilio helpers, parallel, zero deps"]
+        direction LR
+        S2["US-2<br/>Twilio wiring<br/>§9"]:::prep
+        S6["US-6<br/>verify_twilio<br/>_signature"]:::twilio
+        S7["US-7<br/>parse_twilio<br/>_payload"]:::twilio
+        S8["US-8<br/>build_twilio<br/>_send_payload"]:::twilio
+    end
+
+    subgraph FIXED["GIVEN, READ-ONLY — Meta only, never edit"]
+        direction LR
+        M1["mock: queue_owner /<br/>queue_stranger_message"]:::fixed
+        M2["mock: queue_signed /<br/>unsigned / tampered"]:::fixed
+        T1["test_whatsapp.py<br/>7 tests, Meta-only"]:::fixed
+        M1 --> T1
+        M2 --> T1
+    end
+
+    subgraph WAVE2["WAVE 2 — orchestrators, needs Wave 1 merged"]
+        direction LR
+        S9["US-9<br/>on_message<br/>dual-provider"]:::yours
+        S10["US-10<br/>send + guard<br/>dual-provider"]:::yours
+    end
+
+    subgraph SHARED["SHARED CODE — reference only"]
+        direction LR
+        E1["envelope.py"]:::shared
+        B1["base.py"]:::shared
+        TL1["trust_level<br/>.classify()"]:::shared
+        AL1["allowlists<br/>.allowed()"]:::shared
+        PS1["pairing.py<br/>owners()/lookup()"]:::shared
+    end
+
+    S11["US-11: Twilio safety-net suite (Option A)<br/>glc/channels/catalogue/whatsapp/tests/test_twilio_path.py<br/>INSIDE owned path — no special process<br/>Phase 1: unit-tests US-6/7/8 · Phase 2: orchestrator tests after US-9/10"]:::twilio
+
+    S12["US-12: QA / verification — ONE story<br/>recurring (ruff/mypy/boundary every mini-PR)<br/>+ GATE: fixed 7 Meta tests AND US-11 Twilio suite, both green<br/>GO / NO-GO before US-13"]:::gate
+
+    S13["US-13: Demo — BOTH providers<br/>real Meta round-trip + real Twilio round-trip<br/>chat-trace visible for both"]:::demo
+
+    S14["US-14: README.md<br/>both setups, 24h codes (131047 / 63016),<br/>provider-tag architecture, pairing-tier decision"]:::yours
+
+    S15["US-15: Final PR<br/>draft body → scorecard.py → 10/10 → open per §10<br/>ships Option A only, does not attempt B3"]:::demo
+
+    subgraph BACKLOG["BACKLOG — fully specified, never blocks US-1..US-15"]
+        direction LR
+        BL1["B1: schemas.py<br/>typed wrappers<br/>pure style"]:::backlog
+        BL2["B2: ws_client.py<br/>gateway WS glue<br/>agent still a stub"]:::backlog
+        BL3["B3: move US-11 to<br/>tests/channels/<br/>2nd PR, no marker,<br/>@theschoolofai review"]:::backlog
+    end
+
+    %% Wave 1 -> Wave 2
+    S3 --> S9
+    S4 --> S9
+    S6 --> S9
+    S7 --> S9
+    S5 --> S10
+    S8 --> S10
+    T1 -->|"feeds Meta-path tests into"| S9
+    T1 -->|"asserts Meta payload shape"| S10
+
+    %% Wave 2 -> Shared
+    B1 -.->|"Adapter subclasses"| S9
+    B1 -.->|"Adapter subclasses"| S10
+    E1 -.->|"on_message returns"| S9
+    E1 -.->|"send accepts"| S10
+    S9 -->|"constructs"| E1
+    S9 --> TL1
+    S9 --> AL1
+    S10 --> PS1
+
+    %% Real-world wiring feeds demo + signature gotchas
+    S1 -.->|"APP_SECRET"| S3
+    S1 -.->|"PHONE_NUMBER_ID/TOKEN"| S10
+    S2 -.->|"AUTH_TOKEN + WEBHOOK_URL"| S6
+    S2 -.->|"SID/AUTH_TOKEN"| S10
+    S1 --> S13
+    S2 --> S13
+
+    %% Twilio safety net
+    S6 --> S11
+    S7 --> S11
+    S8 --> S11
+    S9 -.->|"Phase 2, after orchestrators land"| S11
+    S10 -.->|"Phase 2"| S11
+
+    %% QA gate
+    S9 --> S12
+    S10 --> S12
+    S11 --> S12
+    S12 -->|"GREEN -> proceed"| S13
+    S12 -.->|"red -> fix forward"| S12
+
+    %% Closing chain
+    S13 --> S14
+    S14 --> S15
+
+    %% Backlog, optional, non-blocking
+    BL1 -.->|"optional typing over"| S4
+    BL1 -.->|"optional typing over"| S7
+    BL2 -.->|"if built, strengthens"| S13
+    BL3 -.->|"contingent on US-11 stability,<br/>only after US-15"| S11
