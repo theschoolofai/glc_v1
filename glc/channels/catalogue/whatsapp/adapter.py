@@ -25,6 +25,33 @@ def verify_meta_signature(raw_body: bytes, headers: dict) -> bool:
     return hmac.compare_digest(expected, sig_header.removeprefix("sha256="))
 
 
+def parse_meta_payload(body: dict) -> dict[str, Any] | None:
+    try:
+        value = body["entry"][0]["changes"][0]["value"]
+    except (KeyError, IndexError):
+        return None
+
+    messages = value.get("messages")
+    if not messages:
+        return None
+
+    msg = messages[0]
+    contacts = value.get("contacts") or []
+    profile_name = contacts[0].get("profile", {}).get("name") if contacts else None
+
+    text: str | None = None
+    if msg.get("type") == "text":
+        text = msg.get("text", {}).get("body")
+
+    return {
+        "from_id": msg["from"],
+        "text": text,
+        "message_id": msg["id"],
+        "timestamp": msg["timestamp"],
+        "profile_name": profile_name,
+    }
+
+
 class Adapter(ChannelAdapter):
     name = "whatsapp"
 
