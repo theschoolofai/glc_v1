@@ -113,4 +113,33 @@ issues found in 4 source files*.
 
 > All seven run through the injected mock (offline, deterministic). They
 > exercise `adapter.py`'s mock-delegate branch only; the real `runner.synthesize`
-> path is proven separately by the demo video.
+> path is proven separately by the demo video produced by
+> `make_demo_video.py`.
+
+## Demo video — regenerate locally
+
+[`make_demo_video.py`](make_demo_video.py) produces a self-narrating
+end-to-end demo MP4. It boots a real GLC gateway as a subprocess on a
+free port, drives every audio clip through `POST /v1/speak?prefer=default`
+over HTTP, renders timed slides with Pillow, and muxes everything into
+one MP4 with `ffmpeg`. The narration you hear in the final video is
+literally the output of the gateway calls the slides describe — true
+end-to-end.
+
+Preconditions:
+
+- `uv pip install kokoro pillow` (already installed in the project env)
+- `ffmpeg` on PATH (any recent build with `libx264` + `aac`)
+- ~300 MB of Kokoro weights cached in `~/.cache/huggingface/` on first
+  run
+
+Run:
+
+```sh
+uv run python -m glc.voice.tts.providers.kokoro.make_demo_video
+```
+
+Output: `glc/voice/tts/providers/kokoro/video_out/kokoro_demo.mp4`
+(1920×1080, ~2:20, ~3 MB). The `video_out/` folder is gitignored;
+upload the MP4 to YouTube / Loom / Vimeo and paste the URL into the
+PR's `## Demo` section.
