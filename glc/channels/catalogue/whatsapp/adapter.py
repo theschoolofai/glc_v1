@@ -25,6 +25,44 @@ def verify_meta_signature(raw_body: bytes, headers: dict) -> bool:
     return hmac.compare_digest(expected, sig_header.removeprefix("sha256="))
 
 
+def parse_meta_payload(body: dict) -> dict[str, Any] | None:
+    try:
+        value = body["entry"][0]["changes"][0]["value"]
+    except (KeyError, IndexError):
+        return None
+
+    messages = value.get("messages")
+    if not messages:
+        return None
+
+    msg = messages[0]
+    contacts = value.get("contacts") or []
+    profile_name = contacts[0].get("profile", {}).get("name") if contacts else None
+
+    text: str | None = None
+    if msg.get("type") == "text":
+        text = msg.get("text", {}).get("body")
+
+    return {
+        "from_id": msg["from"],
+        "text": text,
+        "message_id": msg["id"],
+        "timestamp": msg["timestamp"],
+        "profile_name": profile_name,
+    }
+
+
+def build_meta_send_payload(reply: ChannelReply) -> dict[str, Any]:
+    if not reply.text:
+        raise ValueError("build_meta_send_payload: reply.text must be a non-empty string")
+    return {
+        "messaging_product": "whatsapp",
+        "to": reply.channel_user_id,
+        "type": "text",
+        "text": {"body": reply.text},
+    }
+
+
 class Adapter(ChannelAdapter):
     name = "whatsapp"
 
@@ -35,7 +73,8 @@ class Adapter(ChannelAdapter):
         )
 
     async def send(self, reply: ChannelReply) -> Any:
-        raise NotImplementedError(
-            "Group assignment: implement on_message and send. "
-            "See docs/ADAPTER_GUIDE.md and glc/channels/catalogue/whatsapp/README.md."
-        )
+        body = build_meta_send_payload(reply)
+        mock = self.config.get("mock")
+        if mock is not None:
+            return await mock.send(body)
+        return body

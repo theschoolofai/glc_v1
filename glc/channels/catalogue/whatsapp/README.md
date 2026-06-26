@@ -13,8 +13,22 @@ Two files under this directory:
 
 ## Required environment variables
 
+Meta Cloud API:
 - `WHATSAPP_PHONE_NUMBER_ID`
 - `WHATSAPP_TOKEN`
+- `WHATSAPP_APP_SECRET`
+- `WHATSAPP_VERIFY_TOKEN`
+- `WHATSAPP_WABA_ID`
+- `WHATSAPP_APP_ID`
+
+Twilio Sandbox:
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_SANDBOX_NUMBER`
+- `TWILIO_WEBHOOK_URL`
+- `TWILIO_TEST_TO`
+
+Never commit real values — store them in a local `.env` file (already gitignored).
 
 ## Free-tier limits
 
