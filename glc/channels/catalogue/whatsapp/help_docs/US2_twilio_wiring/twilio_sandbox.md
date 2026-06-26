@@ -105,6 +105,7 @@ TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
 TWILIO_SANDBOX_NUMBER=whatsapp:+14155238886      # From WhatsApp Sandbox page
 TWILIO_TEST_TO=whatsapp:+91xxxxxxxxxx           # Your phone in WhatsApp format
+TWILIO_WEBHOOK_URL=https://abc.ngrok.io/webhook # Your public webhook URL (e.g., ngrok tunnel)
 ```
 
 Values:
@@ -112,6 +113,7 @@ Values:
 - `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`: From Twilio Console → Account (Project) settings.
 - `TWILIO_SANDBOX_NUMBER`: The WhatsApp sandbox number shown on the **WhatsApp Sandbox** page.
 - `TWILIO_TEST_TO`: Your personal WhatsApp number with `whatsapp:` prefix and country code.
+- `TWILIO_WEBHOOK_URL`: The full public webhook URL that matches what you configured in the Twilio Console (e.g., your ngrok or cloudflared tunnel). This **must match exactly** what Twilio has on file (same protocol, domain, and path), as Twilio uses this URL for signature validation.
 
 Install dependencies:
 

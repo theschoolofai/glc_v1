@@ -13,7 +13,6 @@ trust the payload, so the envelope must not be constructed at all.
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -144,8 +143,3 @@ async def test_channel_specific_behaviour_signature_verification(mock, pair_owne
     out = await adapter.on_message({"raw_body": raw, "headers": headers})
     assert isinstance(out, ChannelMessage)
     assert out.text == "valid probe"
-
-
-
-
-

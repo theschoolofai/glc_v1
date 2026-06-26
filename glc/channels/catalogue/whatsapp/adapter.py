@@ -12,7 +12,6 @@ import hmac
 import os
 from typing import Any
 
-from fastapi import Request
 from twilio.request_validator import RequestValidator
 
 from glc.channels.base import ChannelAdapter
@@ -28,26 +27,22 @@ def verify_meta_signature(raw_body: bytes, headers: dict) -> bool:
     return hmac.compare_digest(expected, sig_header.removeprefix("sha256="))
 
 
-async def verify_twilio_signature(request: Request) -> bool:
-    """Verifies the Twilio signature of an incoming FastAPI request.
+def verify_twilio_signature(url: str, params: dict, signature: str, auth_token: str) -> bool:
+    """Verifies the Twilio signature of an incoming webhook.
 
     Args:
-        request: The incoming FastAPI Request object.
+        url: The full public webhook URL (from TWILIO_WEBHOOK_URL env var).
+        params: The form data dict from the webhook payload.
+        signature: The X-Twilio-Signature header value.
+        auth_token: The Twilio Auth Token for validation.
 
     Returns:
         True if the signature is valid, False otherwise.
     """
+    if not auth_token or not signature:
+        return False
     try:
-        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        if not auth_token:
-            return False
-
         validator = RequestValidator(auth_token)
-        url = str(request.url)
-        form_data = await request.form()
-        params = dict(form_data)
-        signature = request.headers.get("X-Twilio-Signature", "")
-
         return validator.validate(url, params, signature)
     except Exception:
         return False

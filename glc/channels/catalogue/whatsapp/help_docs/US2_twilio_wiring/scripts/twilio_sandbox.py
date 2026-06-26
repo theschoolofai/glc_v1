@@ -13,13 +13,19 @@ def send_sandbox_message():
         print("Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN")
         return
 
+    from_number = os.getenv("TWILIO_SANDBOX_NUMBER")
+    to_number = os.getenv("TWILIO_TEST_TO")
+    if not from_number or not to_number:
+        print("Missing TWILIO_SANDBOX_NUMBER or TWILIO_TEST_TO")
+        return
+
     print(f"acc_sid {acc_sid}, token {token[:-4]}...")
 
     client = Client(username=acc_sid, password=token)
 
     message = client.messages.create(
-        from_=os.getenv("TWILIO_SANDBOX_NUMBER"),
-        to=os.getenv("TWILIO_TEST_TO"),
+        from_=from_number,
+        to=to_number,
         body="Twilio sandbox wiring test from .env",
     )
 
