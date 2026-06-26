@@ -79,6 +79,17 @@ def build_twilio_send_payload(to_phone: str, bot_phone: str, text: str | None) -
     }
 
 
+def build_meta_send_payload(reply: ChannelReply) -> dict[str, Any]:
+    if not reply.text:
+        raise ValueError("build_meta_send_payload: reply.text must be a non-empty string")
+    return {
+        "messaging_product": "whatsapp",
+        "to": reply.channel_user_id,
+        "type": "text",
+        "text": {"body": reply.text},
+    }
+
+
 class Adapter(ChannelAdapter):
     name = "whatsapp"
 
@@ -89,7 +100,8 @@ class Adapter(ChannelAdapter):
         )
 
     async def send(self, reply: ChannelReply) -> Any:
-        raise NotImplementedError(
-            "Group assignment: implement on_message and send. "
-            "See docs/ADAPTER_GUIDE.md and glc/channels/catalogue/whatsapp/README.md."
-        )
+        body = build_meta_send_payload(reply)
+        mock = self.config.get("mock")
+        if mock is not None:
+            return await mock.send(body)
+        return body
