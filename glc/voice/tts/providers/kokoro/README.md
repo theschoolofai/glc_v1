@@ -62,8 +62,8 @@ Two files do the work:
 - Optional: `GLC_KOKORO_MODEL_DIR` to override the model location
   (default `~/.glc/models/kokoro-82M/`).
 
-CI never touches these — the seven tests run fully offline against the
-mock, so a fresh checkout with no model download passes.
+CI never touches these — the seven seeded tests run fully offline via
+an injected mock, so a fresh checkout with no model download passes.
 
 ## Quirks we hit
 
@@ -133,7 +133,8 @@ into `~/.cache/huggingface/`. All subsequent calls reuse the cached
 
 ## Tests — `tests/voice/tts/test_kokoro.py`
 
-Seven tests, all green. Six structural + one behavioural:
+Seven tests, all green, exercising the mock-delegate branch
+(structural + behavioural):
 
 | # | Test | What our code does to pass it |
 |--:|------|-------------------------------|
@@ -167,39 +168,44 @@ tests/voice/tts/test_kokoro.py::test_channel_specific_behaviour_pipeline_reuse P
 ======================= 7 passed in 0.14s =======================
 ```
 
-**7/7 passed** on branch `kokoro_adapter_imp`. Quality gates on the owned path
-are also green: `ruff check` → *All checks passed!* and `mypy` → *Success: no
-issues found in 4 source files*.
+**7/7 passed** on branch `kokoro_adapter_imp`. Quality gates on the owned
+path are also green: `ruff check` → *All checks passed!* and `mypy` →
+*Success: no issues found in 4 source files*.
 
-> All seven run through the injected mock (offline, deterministic). They
-> exercise `adapter.py`'s mock-delegate branch only; the real `runner.synthesize`
-> path is proven separately by the demo video produced by
-> `make_demo_video.py`.
+> All seven run through the injected mock (offline, deterministic) and
+> exercise `adapter.py`'s mock-delegate branch only. The end-to-end real
+> `runner.synthesize` path is proven separately by the demo video.
 
-## Demo video — regenerate locally
+### Internal regression tests (bonus, not part of the scored contract)
 
-[`make_demo_video.py`](make_demo_video.py) produces a self-narrating
-end-to-end demo MP4. It boots a real GLC gateway as a subprocess on a
-free port, drives every audio clip through `POST /v1/speak?prefer=default`
-over HTTP, renders timed slides with Pillow, and muxes everything into
-one MP4 with `ffmpeg`. The narration you hear in the final video is
-literally the output of the gateway calls the slides describe — true
-end-to-end.
-
-Preconditions:
-
-- `uv pip install kokoro pillow` (already installed in the project env)
-- `ffmpeg` on PATH (any recent build with `libx264` + `aac`)
-- ~300 MB of Kokoro weights cached in `~/.cache/huggingface/` on first
-  run
-
-Run:
+Four extra tests under [`tests_internal/`](tests_internal/) cover the
+real-path branches in `adapter.py`. They live inside the owned path and
+are **not** auto-discovered by the default `uv run pytest` invocation
+(`pyproject.toml` pins `testpaths = ["tests"]`). Run them explicitly:
 
 ```sh
-uv run python -m glc.voice.tts.providers.kokoro.make_demo_video
+uv run pytest glc/voice/tts/providers/kokoro/tests_internal/ -v
 ```
 
-Output: `glc/voice/tts/providers/kokoro/video_out/kokoro_demo.mp4`
-(1920×1080, ~2:20, ~3 MB). The `video_out/` folder is gitignored;
-upload the MP4 to YouTube / Loom / Vimeo and paste the URL into the
-PR's `## Demo` section.
+| # | Test | What our code does to pass it |
+|--:|------|-------------------------------|
+| 1 | `none_voice_id_resolved_to_default_before_mock` | Adapter resolves `voice_id=None` → `DEFAULT_VOICE_ID` (`af_bella`) *before* delegating, so both the mock and the real runner always see an explicit voice string. |
+| 2 | `runner_generic_exception_wrapped_as_tts_error` | `except Exception` branch in the real path wraps any non-`TTSError` (e.g. `RuntimeError("gpu oom")`) as `TTSError(status=502)` so the gateway's error contract stays consistent. |
+| 3 | `runner_empty_audio_raises_tts_error` | If `runner.synthesize` returns `b""` (KPipeline yielded nothing), the adapter refuses to emit a `SynthesizeResult` with 0 bytes and raises `TTSError(status=502)` instead. |
+| 4 | `runner_tts_error_passes_through_unchanged` | `except TTSError: raise` branch — a structured error from the runner (e.g. model-load failure at `status=503`) reaches the caller with its original status intact, no re-wrapping. |
+
+#### Latest verified run
+
+```
+collected 4 items
+
+glc/voice/tts/providers/kokoro/tests_internal/test_real_path.py::test_none_voice_id_resolved_to_default_before_mock PASSED [ 25%]
+glc/voice/tts/providers/kokoro/tests_internal/test_real_path.py::test_runner_generic_exception_wrapped_as_tts_error PASSED [ 50%]
+glc/voice/tts/providers/kokoro/tests_internal/test_real_path.py::test_runner_empty_audio_raises_tts_error PASSED [ 75%]
+glc/voice/tts/providers/kokoro/tests_internal/test_real_path.py::test_runner_tts_error_passes_through_unchanged PASSED [100%]
+
+============================== 4 passed in 0.26s ==============================
+```
+
+**4/4 passed** on branch `kokoro_adapter_imp`.
+
