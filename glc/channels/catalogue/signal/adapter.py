@@ -28,7 +28,7 @@ class Adapter(ChannelAdapter):
         )
     async def send(self, reply: ChannelReply) -> Any:
         params = SendParams(
-            message=reply.text,
+            message=reply.text or "",
             recipient=reply.channel_user_id if not reply.thread_id else None,
             group_id=reply.thread_id if reply.thread_id else None
         )
