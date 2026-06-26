@@ -53,6 +53,8 @@ def parse_meta_payload(body: dict) -> dict[str, Any] | None:
 
 
 def build_meta_send_payload(reply: ChannelReply) -> dict[str, Any]:
+    if not reply.text:
+        raise ValueError("build_meta_send_payload: reply.text must be a non-empty string")
     return {
         "messaging_product": "whatsapp",
         "to": reply.channel_user_id,
