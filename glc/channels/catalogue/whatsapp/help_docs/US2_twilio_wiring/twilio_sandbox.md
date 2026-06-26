@@ -20,14 +20,14 @@ In the Twilio Console:
 2. Go to **Try it out**.
 3. Click **Send a WhatsApp message**.
 
-On this page, Twilio shows the **WhatsApp Sandbox** details, including: [web:24][web:25][web:31]
+On this page, Twilio shows the **WhatsApp Sandbox** details, including:
 
 - The sandbox WhatsApp number.
 - Your account’s unique sandbox join code.
 - A QR code that can prefill the join message.
 - Sandbox settings for inbound webhook URLs.
 
-If Twilio asks you to accept or confirm WhatsApp Sandbox terms, do that first to activate the sandbox. [web:21]
+If Twilio asks you to accept or confirm WhatsApp Sandbox terms, do that first to activate the sandbox.
 
 ---
 
@@ -49,19 +49,19 @@ Example:
 join white-butterfly
 ```
 
-Twilio should reply in WhatsApp confirming that your phone number has joined the sandbox. [web:21][web:31]
+Twilio should reply in WhatsApp confirming that your phone number has joined the sandbox.
 
 Alternative:
 
 - Scan the QR code shown on the Twilio Sandbox page.
 - WhatsApp will open with the join message prefilled.
-- Send that message to complete the join. [web:21][web:28][web:31]
+- Send that message to complete the join.
 
 ---
 
 ### 4. Confirm sandbox is ready
 
-After the join succeeds, confirm you now have all of these from the Twilio website: [web:21][web:24][web:31]
+After the join succeeds, confirm you now have all of these from the Twilio website:
 
 - `Account SID`
 - `Auth Token`
@@ -69,7 +69,7 @@ After the join succeeds, confirm you now have all of these from the Twilio websi
 - Sandbox join code
 - Sandbox settings page access
 
-At least one end user must join the sandbox before Twilio can send or receive WhatsApp sandbox messages for that number. [web:21]
+At least one end user must join the sandbox before Twilio can send or receive WhatsApp sandbox messages for that number.
 
 ---
 
@@ -80,7 +80,7 @@ Still on the WhatsApp Sandbox page, open **Sandbox Settings** and locate:
 - **When a message comes in**
 - **Status callback URL** (if you plan to track delivery updates)
 
-For US-2, this is where you will later paste your tunnel URL, such as an ngrok or cloudflared endpoint pointing to your local WhatsApp adapter route. [web:25][web:34]
+For US-2, this is where you will later paste your tunnel URL, such as an ngrok or cloudflared endpoint pointing to your local WhatsApp adapter route.
 
 ---
 
@@ -92,7 +92,7 @@ You can consider Twilio website setup complete when:
 - You have saved `Account SID` and `Auth Token`.
 - You reached **Messaging → Try it out → Send a WhatsApp message**.
 - Your personal WhatsApp number sent the `join <code>` message.
-- Twilio confirmed the sandbox join in WhatsApp. [web:21][web:24][web:31]
+- Twilio confirmed the sandbox join in WhatsApp. 
 
 ## Twilio WhatsApp: Env setup and send test
 
