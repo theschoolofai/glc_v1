@@ -1,35 +1,48 @@
-from unittest.mock import MagicMock, patch
-from glc.channels.catalogue.whatsapp.help_docs.US2_twilio_wiring.scripts.twilio_sandbox import send_sandbox_message
+from unittest.mock import patch
 
-@patch("glc.channels.catalogue.whatsapp.help_docs.US2_twilio_wiring.scripts.twilio_sandbox.Client")
-@patch("os.getenv")
-def test_twilio_sandbox_sends_message(mock_getenv, mock_client):
-    def getenv_side_effect(key, default=None):
-        mapping = {
-            "TWILIO_ACCOUNT_SID": "sid",
-            "TWILIO_AUTH_TOKEN": "token",
-            "TWILIO_SANDBOX_NUMBER": "from",
-            "TWILIO_TEST_TO": "to",
-        }
-        return mapping.get(key)
+from twilio.request_validator import RequestValidator
 
-    mock_getenv.side_effect = getenv_side_effect
+from glc.channels.catalogue.whatsapp.adapter import verify_twilio_signature
 
-    # Mock message and client
-    mock_message = MagicMock()
-    mock_message.sid = "msg_sid"
-    mock_message.status = "sent"
-    mock_message.to = "to"
-    mock_message.from_ = "from"
-    mock_message.error_code = None
-    mock_message.error_message = None
 
-    # Configure client.messages.create and messages(sid).fetch
-    instance = mock_client.return_value
-    instance.messages.create.return_value = mock_message
-    instance.messages.return_value.fetch.return_value = mock_message
+def test_verify_twilio_signature_valid():
+    url = "https://example.com/webhook"
+    params = {"Body": "hello", "From": "whatsapp:+123456789"}
+    auth_token = "test_auth_token"
 
-    send_sandbox_message()
+    # Compute valid signature using Twilio's RequestValidator
+    validator = RequestValidator(auth_token)
+    signature = validator.compute_signature(url, params)
 
-    # Assertions
-    instance.messages.create.assert_called_once()
+    assert verify_twilio_signature(url, params, signature, auth_token) is True
+
+
+def test_verify_twilio_signature_invalid():
+    url = "https://example.com/webhook"
+    params = {"Body": "hello", "From": "whatsapp:+123456789"}
+    auth_token = "test_auth_token"
+
+    assert verify_twilio_signature(url, params, "wrong_signature", auth_token) is False
+
+
+def test_verify_twilio_signature_missing_credentials():
+    url = "https://example.com/webhook"
+    params = {"Body": "hello"}
+
+    assert verify_twilio_signature(url, params, "sig", "") is False
+    assert verify_twilio_signature(url, params, "", "token") is False
+    assert verify_twilio_signature(url, params, "sig", None) is False
+    assert verify_twilio_signature(url, params, None, "token") is False
+
+
+def test_verify_twilio_signature_exception_handled():
+    url = "https://example.com/webhook"
+    params = {"Body": "hello"}
+    auth_token = "test_auth_token"
+
+    with patch("glc.channels.catalogue.whatsapp.adapter.RequestValidator") as mock_validator:
+        # Mock RequestValidator to raise an exception on validation
+        mock_validator.return_value.validate.side_effect = Exception("Validation failed")
+
+        assert verify_twilio_signature(url, params, "sig", auth_token) is False
+
