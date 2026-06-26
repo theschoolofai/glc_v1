@@ -12,7 +12,6 @@ dependencies = [
     "jsonschema>=4.21",
     "pyyaml>=6.0",
     "websockets>=12.0",
-    "twilio>=9.10.9",
 ]
 
 [dependency-groups]
