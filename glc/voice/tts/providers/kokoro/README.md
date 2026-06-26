@@ -3,6 +3,28 @@
 **Group:** G9 — Group Kokoro · **Slot:** `kokoro` (TTS) · **Owned path:**
 `glc/voice/tts/providers/kokoro/`
 
+## Group members
+
+| Name | GitHub |
+|------|--------|
+| Abhijeet Upadhyay | @AbhijeetUpadhyay |
+| Amritanshu Singh | @AmritanshuSingh |
+| Dheeraj Hegde | @DheerajHegde |
+| Gaurav Pandey | @GauravPandey |
+| Prateek Mohan Garg | @prateekmohanGarg |
+| Satya Nayak | @SatyaNayak |
+| Soubhik Maji | @SoubhikMaji |
+| Sri Varshini Dharmaraj | @SriVarshiniDharmaraj |
+| Sujit Kumar Thakur | @sujthr |
+| Vikas Gupta | @VikasGupta |
+| Yashwanth G | @YashwanthG |
+
+## Demo
+
+[![Kokoro TTS demo](https://img.youtube.com/vi/2_b4V3v654s/0.jpg)](https://youtu.be/2_b4V3v654s)
+
+[https://youtu.be/2_b4V3v654s](https://youtu.be/2_b4V3v654s)
+
 The default voice path for GLC v1. Kokoro-82M is an open-weights
 text-to-speech model: 82M parameters, runs faster than realtime on a
 laptop CPU, no API key, no network egress, zero per-call cost. That is
@@ -70,6 +92,44 @@ outside a temp WAV buffer, and no network calls on the real path. The
 gateway's `policy.yaml` still gates *whether* a `speak` action is
 allowed before the router is ever reached; this provider sits below
 that decision and only renders audio once allowed.
+
+## Running the real path
+
+Install the Kokoro package and its dependencies (one-time, ~300 MB):
+
+```sh
+uv pip install kokoro soundfile
+```
+
+Start the gateway:
+
+```sh
+cd glc_v1
+uv run glc serve
+```
+
+Synthesize speech via the HTTP endpoint:
+
+```sh
+curl -s -X POST http://localhost:8111/v1/speak \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello from Kokoro, the default voice for GLC v1.", "prefer": "default"}' \
+  | python -c "
+import sys, json, base64, wave, io
+r = json.load(sys.stdin)
+wav = base64.b64decode(r['audio_b64'])
+with open('output.wav', 'wb') as f:
+    f.write(wav)
+print('Saved output.wav —', r['sample_rate'], 'Hz,', r['mime'])
+"
+```
+
+This writes `output.wav` (24 kHz mono PCM WAV) to the current directory.
+`cost_usd` in the response will be `0.0` — Kokoro is fully local.
+
+The first call triggers `runner._load()`, which downloads model weights
+into `~/.cache/huggingface/`. All subsequent calls reuse the cached
+`KPipeline` singleton — no re-download, no re-load.
 
 ## Tests — `tests/voice/tts/test_kokoro.py`
 
