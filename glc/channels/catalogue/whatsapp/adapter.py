@@ -21,7 +21,7 @@ from glc.security.trust_level import TrustLevel, classify
 
 def verify_meta_signature(raw_body: bytes, headers: dict) -> bool:
     secret = os.environ.get("WHATSAPP_APP_SECRET", "")
-    sig_header = headers.get("X-Hub-Signature-256", "")
+    sig_header = headers.get("x-hub-signature-256", "")
     if not secret or not sig_header.startswith("sha256="):
         return False
     expected = hmac.new(secret.encode(), raw_body, hashlib.sha256).hexdigest()
@@ -67,13 +67,16 @@ def parse_meta_payload(body: dict) -> dict[str, Any] | None:
     if msg.get("type") == "text":
         text = msg.get("text", {}).get("body")
 
-    return {
-        "from_id": msg["from"],
-        "text": text,
-        "message_id": msg["id"],
-        "timestamp": msg["timestamp"],
-        "profile_name": profile_name,
-    }
+    try:
+        return {
+            "from_id": msg["from"],
+            "text": text,
+            "message_id": msg["id"],
+            "timestamp": msg["timestamp"],
+            "profile_name": profile_name,
+        }
+    except (KeyError, TypeError):
+        return None
 
 
 def parse_twilio_payload(payload: dict, received_at: datetime) -> dict[str, Any] | None:
@@ -82,7 +85,7 @@ def parse_twilio_payload(payload: dict, received_at: datetime) -> dict[str, Any]
     if not from_id:
         return None
 
-    text = payload.get("Body") if payload.get("NumMedia") == "0" else None
+    text = payload.get("Body") if payload.get("NumMedia", "0") == "0" else None
 
     return {
         "from_id": from_id,
@@ -123,14 +126,17 @@ def build_meta_send_payload(reply: ChannelReply) -> dict[str, Any]:
 
 
 def _parse_form_body(raw_body: bytes) -> dict[str, str]:
-    parsed = parse_qs(raw_body.decode(), keep_blank_values=True)
+    try:
+        parsed = parse_qs(raw_body.decode("utf-8"), keep_blank_values=True)
+    except UnicodeDecodeError:
+        return {}
     return {k: v[0] if v else "" for k, v in parsed.items()}
 
 
 def _headers(raw: Any) -> dict[str, str]:
     if isinstance(raw, dict):
         headers = raw.get("headers") or {}
-        return {str(k): str(v) for k, v in headers.items()}
+        return {str(k).lower(): str(v) for k, v in headers.items()}
     return {}
 
 
@@ -173,17 +179,16 @@ class Adapter(ChannelAdapter):
             if not isinstance(raw_body, bytes):
                 return None
 
-            if headers.get("X-Twilio-Signature"):
+            twilio_sig = headers.get("x-twilio-signature", "")
+            if twilio_sig:
                 params = _parse_form_body(raw_body)
                 url = os.environ.get("TWILIO_WEBHOOK_URL", "")
                 auth_token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-                if not verify_twilio_signature(
-                    url, params, headers.get("X-Twilio-Signature", ""), auth_token
-                ):
+                if not verify_twilio_signature(url, params, twilio_sig, auth_token):
                     return None
                 parsed = parse_twilio_payload(params, datetime.now(UTC))
                 provider = "twilio"
-            elif headers.get("X-Hub-Signature-256"):
+            elif headers.get("x-hub-signature-256"):
                 if not verify_meta_signature(raw_body, headers):
                     return None
                 try:
