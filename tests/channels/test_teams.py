@@ -128,14 +128,9 @@ async def test_channel_specific_behaviour_adaptive_card_bfs(mock, pair_owner):
     nested_card = {
         "type": "AdaptiveCard",
         "body": [
-            {
-                "type": "Container",
-                "items": [
-                    {"type": "TextBlock", "text": "Deep Text (DFS path)"}
-                ]
-            },
-            {"type": "TextBlock", "text": "Shallow Text (BFS path)"}
-        ]
+            {"type": "Container", "items": [{"type": "TextBlock", "text": "Deep Text (DFS path)"}]},
+            {"type": "TextBlock", "text": "Shallow Text (BFS path)"},
+        ],
     }
     ev = mock.queue_adaptive_card_message(card=nested_card)
     msg = await adapter.on_message(ev)
