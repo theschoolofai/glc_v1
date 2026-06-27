@@ -1,34 +1,81 @@
-# Gemini Live (streaming voice in)
+# Gemini Live STT — G-4 Gemini Live STT
 
-Group assignment in Session 11. Implement the realtime STT bridge
-using Google's BidiGenerateContent WebSocket endpoint.
+Speech-to-Text adapter using Google's **Gemini Live BidiGenerateContent**
+WebSocket endpoint. Part of the `glc_v1` gateway, Session 11 assignment.
 
-## What you build
+---
 
-- `adapter.py` — subclass `STTProvider`. Inside `transcribe`, open the
-  WebSocket, send the `setup` frame, push the audio as a `realtimeInput`
-  frame, accumulate transcript chunks until the server emits
-  `turnComplete`, then close.
+## Architecture
 
-## Required environment
+```
+Client
+  │  POST /v1/transcribe  { audio_b64, mime, prefer="streaming" }
+  ▼
+Gateway route (glc/routes/transcribe.py)
+  │  decodes base64 → raw bytes, dispatches to router
+  ▼
+STT Router (glc/voice/stt/router.py)
+  │  prefer="streaming" → gemini_live provider
+  ▼
+GeminiLive Provider (adapter.py)
+  │
+  ├─ mock path  (config["mock"] present)  ←── used by CI / unit tests
+  │    records frames, returns canned TranscribeResult
+  │
+  └─ real path  (production / demo)
+       1. Open WebSocket to BidiGenerateContent endpoint
+       2. Send BidiGenerateContentSetup frame FIRST
+          ┌─ model: gemini-3.1-flash-live-preview
+          ├─ responseModalities: ["AUDIO"]
+          ├─ outputAudioTranscription: {}   (enables text transcript of reply)
+          └─ systemInstruction: "Repeat back exactly what the user says"
+       3. Send realtimeInput.audio frame (raw PCM, 16 kHz)
+       4. Send audioStreamEnd signal
+       5. Collect outputTranscription.text chunks until turnComplete
+       6. Return TranscribeResult(text, provider, duration_ms, cost_usd)
+```
 
-- `GEMINI_API_KEY` (the same key already used by the worker pool).
+---
 
-## Quirks
+## Channel quirks we hit
 
-- The wire endpoint is
-  `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=<KEY>`.
-- The first frame must be a `BidiGenerateContentSetup` carrying the
-  model name and a `responseModalities: ["AUDIO"]` / `["TEXT"]` field.
-- Server response chunks may arrive interleaved with `usageMetadata`
-  frames — accumulate text from `serverContent.modelTurn.parts[].text`
-  and ignore everything else.
-- The session has a 60-second idle timeout; close cleanly after
-  `turnComplete`.
+Working against the live Gemini BidiGenerateContent API revealed several
+undocumented or breaking behaviours:
 
-## Tests you need to pass
+| Quirk | What happened | How we fixed it |
+|---|---|---|
+| `inputAudioTranscription: {}` | API returns 1007 "invalid argument" — field rejected entirely | Removed; switched to `outputAudioTranscription` |
+| `responseModalities: ["TEXT"]` | 1007 "TEXT not supported by this model" | Only `["AUDIO"]` is accepted by `gemini-3.1-flash-live-preview` |
+| `mediaChunks` field | 1007 "realtime_input.media_chunks is deprecated" | Switched to `realtimeInput.audio` field |
+| WAV audio format | 1007 "invalid argument" — Gemini Live rejects WAV containers | Strip 44-byte RIFF header in `_build_audio_frame` before sending raw PCM |
+| Duplicate transcript | Both `outputTranscription` and `modelTurn.parts[].text` fired on same frame | Changed `if/if/if` to `elif` priority chain — only one source collects per frame |
+| GEMINI_API_KEY not found | `glc/main.py` loads `.env` from `ROOT.parent.parent` (two levels up from `glc/`), not from `glc_v1/` | Export key as shell env var: `export GEMINI_API_KEY=...` before running gateway |
 
-`tests/voice/stt/test_gemini_live.py` — six structural tests plus
-`test_channel_specific_behaviour_setup_frame_first`: the adapter must
-send a `BidiGenerateContentSetup` as the first frame before any audio
-data. Sending audio first causes the server to reject the session.
+---
+
+## How the tests exercise the trust-level boundary
+
+`tests/voice/stt/test_gemini_live.py` — 7 tests using an in-repo mock
+(no API key, no network).
+
+| Test | What it checks |
+|---|---|
+| `test_provider_name_matches` | `provider.name == "gemini_live"` — registry routing depends on this |
+| `test_transcribe_returns_transcribe_result` | Return type is `TranscribeResult` — gateway contract |
+| `test_transcribe_passes_audio_to_upstream` | Audio bytes reach the upstream unchanged — no silent data loss |
+| `test_transcribe_records_duration_ms` | `duration_ms > 0` — latency tracking for scoring |
+| `test_transcribe_propagates_upstream_error` | `STTError` bubbles up correctly — gateway turns it into HTTP 400 |
+| `test_transcribe_handles_empty_audio` | Empty bytes do not crash — graceful degradation |
+| `test_channel_specific_behaviour_setup_frame_first` | **The setup frame must be `frames_sent[0]`** — Gemini Live rejects any session where audio arrives before setup |
+
+The last test is the trust-level boundary check: it enforces the
+wire-protocol contract that setup always precedes audio. Breaking this
+ordering would cause every real API call to fail with a 1008 policy
+violation.
+
+---
+
+## Setup & running
+
+See [SETUP.md](SETUP.md) for full instructions (API key, gateway start,
+unit tests, live mic test).
