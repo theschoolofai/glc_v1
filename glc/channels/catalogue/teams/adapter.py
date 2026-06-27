@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from glc.channels.base import ChannelAdapter
@@ -41,7 +41,7 @@ _TOKEN_CACHE: dict[str, tuple[str, float]] = {}
 
 def _parse_timestamp(raw_ts: str | None) -> datetime:
     if not raw_ts:
-        return datetime.utcnow()
+        return datetime.now(UTC)
     # Bot Framework timestamps are RFC3339 with a trailing "Z"; Python's
     # fromisoformat wants an explicit offset.
     return datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
@@ -61,7 +61,7 @@ def _extract_adaptive_card_text(card: dict[str, Any]) -> str | None:
         if node.get("type") == "TextBlock" and node.get("text"):
             return str(node["text"])
         nested = node.get("items") or node.get("columns") or []
-        queue = list(nested) + queue
+        queue = queue + list(nested)
     return None
 
 
@@ -147,8 +147,9 @@ class Adapter(ChannelAdapter):
         if activity.get("type") != "message":
             return None
 
-        from_id = str(activity["from"]["id"])
-        from_name = str(activity["from"].get("name") or from_id)
+        from_obj = activity.get("from") or {}
+        from_id = str(from_obj.get("id") or "")
+        from_name = str(from_obj.get("name") or from_id)
         activity_id = str(activity["id"])
         service_url = str(activity.get("serviceUrl", ""))
         conversation = activity.get("conversation") or {}

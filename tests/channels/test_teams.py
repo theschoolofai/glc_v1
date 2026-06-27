@@ -119,3 +119,21 @@ async def test_channel_specific_behaviour_adaptive_card(mock, pair_owner):
     card = msg.metadata.get("adaptive_card")
     assert card is not None, "metadata['adaptive_card'] must hold the raw card JSON"
     assert card.get("type") == "AdaptiveCard"
+
+
+@pytest.mark.asyncio
+async def test_channel_specific_behaviour_adaptive_card_bfs(mock, pair_owner):
+    """Verify that Adaptive Card extraction walks the card body breadth-first."""
+    adapter = Adapter(config={"mock": mock})
+    nested_card = {
+        "type": "AdaptiveCard",
+        "body": [
+            {"type": "Container", "items": [{"type": "TextBlock", "text": "Deep Text (DFS path)"}]},
+            {"type": "TextBlock", "text": "Shallow Text (BFS path)"},
+        ],
+    }
+    ev = mock.queue_adaptive_card_message(card=nested_card)
+    msg = await adapter.on_message(ev)
+    assert msg is not None
+    # Breadth-first should find "Shallow Text" at depth 1 before "Deep Text" at depth 2
+    assert msg.text == "Shallow Text (BFS path)"
