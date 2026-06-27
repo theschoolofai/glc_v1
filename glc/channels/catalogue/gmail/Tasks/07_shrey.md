@@ -1,4 +1,6 @@
-# STATUS: IMPLEMENTED — verify
+# STATUS: COMPLETED — verify only
+
+> **Do not rewrite this section unless a test fails.** Code is already in `adapter.py`.
 
 ## Who you are
 
@@ -54,10 +56,14 @@ uv run pytest tests/channels/test_gmail.py -v -k "owner_returns_valid_envelope o
 
 ## Acceptance checklist
 
-- [ ] Returns valid `ChannelMessage` for owner (trust `owner_paired`)
-- [ ] Strangers get `untrusted` tag (not dropped unless public channel)
-- [ ] Public channel drops untrusted (`None`)
-- [ ] Full Pub/Sub → text/plain pipeline works
+- [x] Returns valid `ChannelMessage` for owner (trust `owner_paired`)
+- [x] Strangers get `untrusted` tag (not dropped unless public channel)
+- [x] Public channel drops untrusted (`None`)
+- [x] Full Pub/Sub → text/plain pipeline works
+
+## Pending from you
+
+**None** — task complete.
 
 ## Suggested LLM prompt
 

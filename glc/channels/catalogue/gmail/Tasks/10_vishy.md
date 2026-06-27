@@ -1,4 +1,6 @@
-# STATUS: IMPLEMENTED — verify
+# STATUS: COMPLETED — verify only
+
+> **Do not rewrite this section unless a test fails.** Code is already in `adapter.py`.
 
 ## Who you are
 
@@ -66,10 +68,14 @@ uv run pytest tests/channels/test_gmail.py -v -k "owner_returns_valid_envelope o
 
 ## Acceptance checklist
 
-- [ ] Uses `classify("gmail", sender_email)`
-- [ ] Public channel: untrusted senders dropped in orchestrator
-- [ ] 429 propagated to `send()` caller
-- [ ] Disconnect via `pop_disconnect()` does not raise
+- [x] Uses `classify("gmail", sender_email)`
+- [x] Public channel: untrusted senders dropped in orchestrator
+- [x] 429 propagated to `send()` caller
+- [x] Disconnect via `pop_disconnect()` does not raise
+
+## Pending from you
+
+**None** — task complete.
 
 ## Suggested LLM prompt
 

@@ -1,4 +1,6 @@
-# STATUS: IMPLEMENTED — verify
+# STATUS: COMPLETED — verify only
+
+> **Do not rewrite this section unless a test fails.** Code is already in `adapter.py`.
 
 ## Who you are
 
@@ -67,9 +69,13 @@ uv run pytest tests/channels/test_gmail.py -v -k pubsub_to_text_plain
 
 ## Acceptance checklist
 
-- [ ] `text/plain` extracted, not `text/html`
-- [ ] Attachments stored as `art:<hash>` refs
-- [ ] Display names stripped from From header helper
+- [x] `text/plain` extracted, not `text/html`
+- [x] Attachments stored as `art:<hash>` refs
+- [x] Display names stripped from From header helper
+
+## Pending from you
+
+**None** — task complete.
 
 ## Suggested LLM prompt
 
