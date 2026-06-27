@@ -1,13 +1,37 @@
 Step 1: Create a Discord Application and Bot
 
   1. Go to the Discord Developer Portal: https://discord.com/developers/applications
+     
+     ![Discord Developer Portal Applications](images/ss_01_01.png)
+
   2. Click New Application, name it (e.g., GLC Bot), click Create.
+     
+     ![Create New Application](images/ss_01_02.png)
+
   3. In the left sidebar, click Bot.
+     
+     ![Navigate to Bot settings](images/ss_01_03.png)
+
   4. Click Add Bot → confirm. This creates the bot user.
+     
+     ![Add Bot button](images/ss_01_04.png)
+     
+     ![Confirm Bot creation](images/ss_01_05.png)
+
   5. Under Token, click Reset Token → copy the token — this is your DISCORD_BOT_TOKEN. Store it securely; you only see it once.
+     
+     ![Reset Token button](images/ss_01_06.png)
+     
+     ![Reset Token confirmation dialog](images/ss_01_07.png)
+     
+     ![Copying Discord Token](images/ss_01_08.png)
+
   6. Under Privileged Gateway Intents, enable:
     - Message Content Intent (required to read message text)
     - Server Members Intent (needed for user resolution)
+    
+    ![Enable Privileged Gateway Intents](images/ss_01_09.png)
+
   7. Click Save Changes.
 
   ---
@@ -20,6 +44,16 @@ Step 1: Create a Discord Application and Bot
     - Send Messages
     - Read Message History
   4. Copy the generated URL, open it in a browser, and select your server.
+     
+     ![Copy Generated Bot Invite URL](images/ss_01_10.png)
+     
+     ![Select Server on Discord Invite Page](images/ss_01_11.png)
+     
+     ![Authorize Bot Permissions](images/ss_01_12.png)
+     
+     ![Bot Authorization Successful](images/ss_01_13.png)
+
+https://discord.com/oauth2/authorize?client_id=1520485129489874954&permissions=292057979968&integration_type=0&scope=bot
 
   ---
   Step 3: Set the Environment Variable
