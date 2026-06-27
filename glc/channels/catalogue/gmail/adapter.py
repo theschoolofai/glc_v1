@@ -32,6 +32,8 @@ from glc.channels.catalogue.gmail.schemas import (
     PubSubPushNotification,
 )
 from glc.channels.envelope import Attachment, ChannelMessage, ChannelReply
+from glc.security.allowlists import allowed
+from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import TrustLevel, classify
 
 logger = logging.getLogger(__name__)
@@ -64,7 +66,15 @@ class Adapter(ChannelAdapter):
         """Return the Gmail client (mock or live).
 
         In test/demo mode, uses config["mock"].
-        In production, builds a real Gmail API service.
+        In production, builds a real Gmail API service. OAuth credentials
+        are loaded from the environment (no secrets in source):
+
+          - GMAIL_OAUTH_CLIENT_ID     OAuth 2.0 client id
+          - GMAIL_OAUTH_CLIENT_SECRET OAuth 2.0 client secret
+
+        A previously authorized ``token.json`` (written by auth_setup) is
+        used for the refresh token; the client id/secret needed to refresh
+        it come from the environment so they are never committed.
         """
         if self._client is not None:
             return self._client
@@ -78,7 +88,21 @@ class Adapter(ChannelAdapter):
         token_path = Path(__file__).parent / "token.json"
         scopes = ["https://www.googleapis.com/auth/gmail.modify"]
 
+        client_id = os.getenv("GMAIL_OAUTH_CLIENT_ID")
+        client_secret = os.getenv("GMAIL_OAUTH_CLIENT_SECRET")
+
         creds = Credentials.from_authorized_user_file(str(token_path), scopes)
+        # Prefer env-provided client id/secret for the refresh exchange so
+        # no long-lived OAuth client secret needs to live in token.json.
+        if client_id and client_secret:
+            creds = Credentials(
+                token=creds.token,
+                refresh_token=creds.refresh_token,
+                token_uri=creds.token_uri or "https://oauth2.googleapis.com/token",
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=scopes,
+            )
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
             with open(token_path, "w") as f:
@@ -125,11 +149,14 @@ class Adapter(ChannelAdapter):
 
         # Person 10: resolve trust level — tags the message for the policy engine.
         # In normal mode, all messages are delivered with their trust tag.
-        # In public channel mode, untrusted senders are dropped at the adapter
-        # level to avoid flooding the agent with spam.
+        # In public channel mode, the adapter consults the allowlist before
+        # processing strangers (mention_only_in_public default), so untrusted
+        # senders are dropped at the adapter level to avoid flooding the agent.
         trust_level = self._resolve_trust_level(from_addr)
 
-        if self.config.get("is_public_channel") and trust_level == "untrusted":
+        if self.config.get("is_public_channel") and not self._check_allowlist(
+            from_addr, trust_level
+        ):
             return None  # type: ignore[return-value]
 
         # Person 6: parse body and attachments
@@ -177,7 +204,9 @@ class Adapter(ChannelAdapter):
 
             trust_level = self._resolve_trust_level(from_addr)
 
-            if self.config.get("is_public_channel") and trust_level == "untrusted":
+            if self.config.get("is_public_channel") and not self._check_allowlist(
+                from_addr, trust_level
+            ):
                 continue
 
             text_body = self._extract_text_plain(email_msg)
@@ -436,17 +465,28 @@ class Adapter(ChannelAdapter):
         return classify("gmail", sender_email)
 
     def _check_allowlist(self, sender_email: str, trust_level: str) -> bool:
-        """Check if sender is allowed in a public channel.
+        """Check if a sender may be processed in a public channel.
 
-        In public-channel mode (mention_only_in_public=True),
-        untrusted senders are dropped unless allowlisted.
+        Consults the canonical per-channel allowlist
+        (`glc.security.allowlists.allowed`), which reads `allowed_senders`
+        and `mention_only_in_public` from channels.yaml. Owners and paired
+        users always pass; unknown senders pass only if explicitly
+        allowlisted.
 
         Returns:
-            True if message should be processed, False to drop.
+            True if the message should be processed, False to drop.
         """
-        if trust_level in ("owner_paired", "user_paired"):
-            return True
-        return False
+        owner_ids = [
+            p.channel_user_id for p in get_pairing_store().owners(channel="gmail")
+        ]
+        ok, _why = allowed(
+            "gmail",
+            sender_email,
+            owner_ids=owner_ids,
+            is_public_channel=True,
+            was_mentioned=trust_level in ("owner_paired", "user_paired"),
+        )
+        return ok
 
     def _handle_rate_limit(self, response: Any) -> None:
         """Check if Gmail API returned 429 and log a warning.

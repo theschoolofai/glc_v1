@@ -1,4 +1,6 @@
-# STATUS: IMPLEMENTED — verify
+# STATUS: COMPLETED — verify only
+
+> **Do not rewrite this section unless a test fails.** Code is already in `adapter.py`.
 
 ## Who you are
 
@@ -67,9 +69,13 @@ uv run pytest tests/channels/test_gmail.py -v -k pubsub_to_text_plain
 
 ## Acceptance checklist
 
-- [ ] Returns `(str, int)` for valid Pub/Sub push
-- [ ] Raises `ValueError` on malformed envelope
-- [ ] Uses `schemas.py` types (not ad-hoc dict access only)
+- [x] Returns `(str, int)` for valid Pub/Sub push
+- [x] Raises `ValueError` on malformed envelope
+- [x] Uses `schemas.py` types (not ad-hoc dict access only)
+
+## Pending from you
+
+**None** — task complete.
 
 ## Suggested LLM prompt
 

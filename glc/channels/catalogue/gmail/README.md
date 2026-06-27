@@ -91,6 +91,8 @@ This opens a browser for OAuth consent. After approval:
 - `token.json` is saved (persistent refresh token)
 - `gmail.users.watch()` is called to register Pub/Sub notifications
 
+![token.json saved after OAuth consent](Images/1_token_cred.png)
+
 ### Step 4: Run the live server
 
 ```bash
@@ -99,6 +101,8 @@ uv run python -m glc.channels.catalogue.gmail.server
 ```
 
 The server polls Gmail every 5 seconds. Send an email from your personal account to the bot account to see the full pipeline logged. The `GLC_GMAIL_OWNER` email will get `owner_paired` trust level.
+
+![Gmail adapter server started, owner paired](Images/2_gmail_server_started.png)
 
 ### Step 5: Run tests
 
@@ -109,6 +113,46 @@ uv run pytest tests/channels/test_gmail.py -v
 # Extended tests (edge cases, security)
 uv run pytest tests/test_gmail_extended.py -v
 ```
+
+All 7 CI-required tests pass:
+
+![7 Gmail CI tests passing](Images/test_cases.png)
+
+## Live Demo
+
+**Demo video:** [Gmail adapter — real upstream end-to-end (YouTube)](https://www.youtube.com/watch?v=JdnMkQUbnrU)
+
+End-to-end run against a real Gmail account, captured from the live server.
+
+### 1. Inbound email arrives
+
+A real email (`subject: "Hey sai"`) hits the bot inbox and the adapter logs each pipeline step — `_parse_pubsub_envelope` → `_fetch_history` → `_fetch_message` → `_extract_email` + `_resolve_trust_level`:
+
+![Incoming email — adapter pipeline steps 1-4](Images/3_incoming_mail.png)
+
+### 2. Body extraction and ChannelMessage output
+
+`_extract_text_plain` surfaces only the `text/plain` part (discarding `text/html`), `_extract_attachments` returns `[]`, and the adapter emits the typed `ChannelMessage` (an unknown sender resolves to `trust_level = untrusted`):
+
+![text/plain extraction and ChannelMessage output](Images/3_income_2.png)
+
+### 3. Outbound reply
+
+`_format_reply` builds the RFC 2822 MIME (base64url), then `messages.send({raw, threadId})` posts the echo reply back into the same thread:
+
+![Outbound send — format_reply and messages.send](Images/3_income_3.png)
+
+### 4. Reply lands in Gmail
+
+The `[GLC Echo]` reply appears in the Gmail thread:
+
+![Echo reply delivered in Gmail inbox](Images/4_messege.png)
+
+### 5. Pub/Sub notifications
+
+The Gmail `users.watch()` registration publishes `{emailAddress, historyId}` notifications to the Pub/Sub topic:
+
+![Pub/Sub topic messages](Images/pub_sub_messeges.png)
 
 ## Pipeline Details
 
@@ -160,10 +204,15 @@ Attachments are stored ephemerally at `~/.glc/artifacts/<sha256[:16]>`:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
+| `GMAIL_OAUTH_CLIENT_ID` | (none — required for live) | OAuth 2.0 client id used for the token refresh exchange |
+| `GMAIL_OAUTH_CLIENT_SECRET` | (none — required for live) | OAuth 2.0 client secret (never committed; read from env) |
+| `GMAIL_PUBSUB_TOPIC` | `projects/<project>/topics/gmail-notifications` | Fully-qualified Pub/Sub topic for `users.watch()` |
 | `GLC_GMAIL_OWNER` | (none — required) | Owner email for trust pairing |
 | `GMAIL_BOT_ADDRESS` | `me` | From address in outbound emails |
 | `GLC_ARTIFACTS_DIR` | `~/.glc/artifacts` | Attachment storage directory |
 | `GLC_PAIRING_DB` | `~/.glc/pairings.sqlite` | Trust pairing database path |
+
+See `.env.example` for a copy-paste template. `.env` is gitignored — never commit real secrets.
 
 ## Wire Format Quirks
 
