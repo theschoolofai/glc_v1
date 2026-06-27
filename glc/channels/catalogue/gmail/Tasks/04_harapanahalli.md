@@ -1,4 +1,6 @@
-# STATUS: IMPLEMENTED — verify
+# STATUS: COMPLETED — verify only
+
+> **Do not rewrite this section unless a test fails.** Code is already in `adapter.py`.
 
 ## Who you are
 
@@ -54,9 +56,13 @@ uv run pytest tests/channels/test_gmail.py -v -k pubsub_to_text_plain
 
 ## Acceptance checklist
 
-- [ ] Calls `client.history_list(history_id)`
-- [ ] Returns list of `(message_id, thread_id)` tuples
-- [ ] Handles empty history gracefully (empty list)
+- [x] Calls `client.history_list(history_id)`
+- [x] Returns list of `(message_id, thread_id)` tuples
+- [x] Handles empty history gracefully (empty list)
+
+## Pending from you
+
+**None** — task complete.
 
 ## Suggested LLM prompt
 

@@ -1,4 +1,6 @@
-# STATUS: IMPLEMENTED — verify
+# STATUS: COMPLETED — verify only
+
+> **Do not rewrite this section unless a test fails.** Code is already in `adapter.py`.
 
 ## Who you are
 
@@ -54,9 +56,13 @@ uv run pytest tests/channels/test_gmail.py -v -k "send_emits_valid_wire_payload 
 
 ## Acceptance checklist
 
-- [ ] Calls `_format_reply` then `client.send`
-- [ ] Payload has `raw` key (base64url MIME)
-- [ ] 429 response returned to caller (not swallowed)
+- [x] Calls `_format_reply` then `client.send`
+- [x] Payload has `raw` key (base64url MIME)
+- [x] 429 response returned to caller (not swallowed)
+
+## Pending from you
+
+**None** — task complete.
 
 ## Suggested LLM prompt
 

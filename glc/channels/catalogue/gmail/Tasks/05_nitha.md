@@ -1,4 +1,6 @@
-# STATUS: IMPLEMENTED — verify
+# STATUS: COMPLETED — verify only
+
+> **Do not rewrite this section unless a test fails.** Code is already in `adapter.py`.
 
 ## Who you are
 
@@ -49,8 +51,12 @@ uv run pytest tests/channels/test_gmail.py -v -k pubsub_to_text_plain
 
 ## Acceptance checklist
 
-- [ ] Base64url padding handled correctly
-- [ ] Returns `None` on missing message (no unhandled exception)
+- [x] Base64url padding handled correctly
+- [x] Returns `None` on missing message (no unhandled exception)
+
+## Pending from you
+
+**None** — task complete.
 
 ## Suggested LLM prompt
 
