@@ -55,6 +55,7 @@ ROW_RE = re.compile(r"^\|\s*([\w-]+)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$")
 # sides before comparing in `claimed_globs`.
 GROUP_MARKER_RE = re.compile(r"^\s*#\s*Group:\s*([^\r\n]+?)\s*$", re.IGNORECASE | re.MULTILINE)
 
+
 def normalize_group(name: str) -> str:
     """`Group Telegram` and `Telegram` both normalise to `telegram`."""
     n = name.strip().lower()
