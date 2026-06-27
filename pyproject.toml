@@ -12,6 +12,9 @@ dependencies = [
     "jsonschema>=4.21",
     "pyyaml>=6.0",
     "websockets>=12.0",
+    "pyttsx3>=2.99",
+    "sounddevice>=0.5.5",
+    "soundfile>=0.14.0",
 ]
 
 [dependency-groups]

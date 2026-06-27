@@ -63,21 +63,50 @@ class Provider(STTProvider):
         top-level ``setup`` key, which is preserved.
         """
         model = self.config.get("model", _DEFAULT_MODEL)
-        # Live/native-audio models emit AUDIO; the STT text we want comes
-        # back via `inputAudioTranscription`, independent of this modality.
+        # gemini-3.1-flash-live-preview only supports AUDIO responseModalities.
+        # TEXT modality is rejected by this model (1007 error).
+        # inputAudioTranscription: {} is also rejected by the current API (1007).
+        # Strategy: use outputAudioTranscription to get a text transcript of the
+        # model's AUDIO reply. A systemInstruction tells the model to repeat
+        # the user's words verbatim, so the output transcript == the input STT.
         modalities = self.config.get("response_modalities", ["AUDIO"])
         return {
             "setup": {
                 "model": model,
                 "generationConfig": {"responseModalities": modalities},
-                # Ask the Live API to transcribe the *input* audio (STT),
-                # rather than only generating a conversational reply.
-                "inputAudioTranscription": {},
+                # Enable text transcription of the model's audio output.
+                "outputAudioTranscription": {},
+                # Instruct the model to act as a transcriber: repeat exactly
+                # what the user says so outputTranscription == the input speech.
+                "systemInstruction": {
+                    "parts": [{
+                        "text": (
+                            "You are a speech transcription service. "
+                            "Repeat back exactly what the user says, "
+                            "word for word. Output only the transcription "
+                            "with no additional commentary."
+                        )
+                    }]
+                },
             }
         }
 
     def _build_audio_frame(self, audio: bytes, mime: str) -> dict[str, Any]:
-        """The realtimeInput frame carrying the (base64) audio payload."""
+        """The realtimeInput frame carrying the (base64) audio payload.
+
+        Gemini Live requires raw PCM data (not WAV). If the caller passes
+        a WAV file (detected by the 'RIFF' header), we strip the 44-byte
+        header to extract the raw PCM payload before encoding.
+
+        Note: ``mediaChunks`` is deprecated by the API; the ``audio`` field
+        is the current supported format for audio input.
+        """
+        # Strip WAV container header if present — Gemini Live expects raw PCM.
+        # WAV files start with the 4-byte ASCII magic 'RIFF'.
+        _WAV_HEADER_BYTES = 44
+        if audio[:4] == b"RIFF":
+            audio = audio[_WAV_HEADER_BYTES:]
+            mime = "audio/pcm;rate=16000"
         encoded = base64.b64encode(audio).decode("ascii")
         return {
             "realtimeInput": {
@@ -110,13 +139,17 @@ class Provider(STTProvider):
         Flow (per https://ai.google.dev/api/multimodal-live):
 
           1. Open ``{_WS_ENDPOINT}?key=$GEMINI_API_KEY``.
-          2. Send the setup frame FIRST.
-          3. Send the audio as a ``realtimeInput`` frame, then signal
+          2. Send the setup frame FIRST (includes systemInstruction and
+             outputAudioTranscription to enable text transcript of the reply).
+          3. Send the audio as a ``realtimeInput.audio`` frame with raw PCM
+             at 16 kHz (WAV header stripped if present), then signal
              ``audioStreamEnd`` so the server closes the input turn.
           4. Read messages, accumulating text from
-             ``serverContent.modelTurn.parts[].text``; ignore
-             ``setupComplete`` / ``usageMetadata`` frames. Stop on
-             ``serverContent.turnComplete``.
+             ``serverContent.outputTranscription.text`` (preferred — arrives
+             alongside each audio chunk when outputAudioTranscription is set).
+             Fall back to ``inputTranscription`` or ``modelTurn.parts[].text``
+             if available. Ignore ``setupComplete`` / ``usageMetadata`` /
+             ``sessionResumptionUpdate`` frames. Stop on ``turnComplete``.
           5. Wrap any failure in ``STTError``.
 
         Requires ``GEMINI_API_KEY`` in the environment (or ``config``).
@@ -146,12 +179,22 @@ class Provider(STTProvider):
                     data = json.loads(raw)
                     server_content = data.get("serverContent")
                     if not server_content:
-                        continue  # setupComplete / usageMetadata / etc.
-                    # Preferred for STT: the input-audio transcription.
+                        # Skip non-content frames: setupComplete, usageMetadata,
+                        # sessionResumptionUpdate, etc.
+                        continue
+                    # Primary path: outputTranscription is populated when
+                    # outputAudioTranscription is enabled in the setup frame.
+                    # It carries the text transcript of the model's audio reply
+                    # in chunks alongside each audio inlineData part.
+                    output_tx = server_content.get("outputTranscription")
+                    if output_tx and output_tx.get("text"):
+                        transcript.append(output_tx["text"])
+                    # Legacy fallback: inputTranscription (if API ever enables it).
                     input_tx = server_content.get("inputTranscription")
                     if input_tx and input_tx.get("text"):
                         transcript.append(input_tx["text"])
-                    # Fallback: any model-turn text parts.
+                    # Further fallback: text parts in the model turn (not present
+                    # when responseModalities is AUDIO-only, but kept for safety).
                     model_turn = server_content.get("modelTurn")
                     if model_turn:
                         for part in model_turn.get("parts", []):
