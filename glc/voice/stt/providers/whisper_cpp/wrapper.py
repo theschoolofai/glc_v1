@@ -18,6 +18,9 @@ from pathlib import Path
 MODEL_DIR = Path(os.path.expanduser(os.getenv("GLC_WHISPER_MODEL_DIR", "~/.glc/models/whisper-base")))
 MODEL_FILE = MODEL_DIR / "ggml-base.bin"
 
+# No-speech threshold for whisper-cli; default speech-probability cut.
+VAD_THRESHOLD = 0.6
+
 
 def run_whisper_cpp(audio: bytes, mime: str, use_vad: bool = False) -> tuple[str, str, int]:
     cli = shutil.which("whisper-cli") or shutil.which("whisper.cpp")
@@ -38,13 +41,13 @@ def run_whisper_cpp(audio: bytes, mime: str, use_vad: bool = False) -> tuple[str
         audio_path = Path(f.name)
     try:
         cmd = [cli, "-m", str(MODEL_FILE), "-f", str(audio_path), "-oj"]
-        # In whisper.cpp, Voice Activity Detection is enabled via -vth <threshold> 
-        # (or similar flags). Usually, adding `-vtw` or `-vth` enables it.
-        # Check whisper-cli --help to be sure. We append the flag here.
+        # For long inputs, raise the no-speech threshold so whisper drops
+        # no-speech segments more aggressively. `-nth` is model-free; the
+        # native `--vad` flag would require a separate Silero VAD model.
         if use_vad:
-            cmd.append("-vth")
-            cmd.append("0.6") # Default threshold, adjust if necessary
-        
+            cmd.append("-nth")
+            cmd.append(str(VAD_THRESHOLD))
+
         out = subprocess.run(
             cmd,
             capture_output=True,
