@@ -1,8 +1,15 @@
-"""Stub adapter for Signal via signal-cli.
+"""Signal adapter — signal-cli JSON-RPC wire format.
 
-Group assignment: implement on_message and send against the mock-API
-fake in tests/channels/mocks/signal_mock.py. See docs/ADAPTER_GUIDE.md
-for the standard workflow.
+Inbound:  JSON-RPC notification, method "receive".
+          params.envelope.source       → sender phone (E.164)
+          params.envelope.dataMessage.message → text body
+          params.envelope.dataMessage.groupInfo.groupId → group (base64)
+
+Outbound: JSON-RPC request, method "send".
+          DM:    params = {recipient, message}
+          Group: params = {groupId, message}
+
+Required env vars: SIGNAL_CLI_PATH, SIGNAL_ACCOUNT_NUMBER
 """
 
 from __future__ import annotations
@@ -24,7 +31,11 @@ from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
 from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
-from glc.channels.catalogue.signal.schemas import SendParams, SignalSendRequest
+from glc.channels.catalogue.signal.schemas import (
+    SendParams,
+    SignalReceiveNotification,
+    SignalSendRequest,
+)
 
 
 class Adapter(ChannelAdapter):
@@ -107,9 +118,28 @@ class Adapter(ChannelAdapter):
             group_id=reply.thread_id if reply.thread_id else None
         )
 
+    async def send(self, reply: ChannelReply) -> Any:
+        # Guard: nothing to send
+        if not reply.text and not reply.attachments:
+            raise ValueError("send: reply must have text or at least one attachment")
+
+        # Guard: DM with no destination
+        if not reply.thread_id and not reply.channel_user_id:
+            raise ValueError("send: DM reply requires a non-empty channel_user_id")
+
+        # Build params dict using wire-format alias keys ("groupId", not "group_id"),
+        # because SendParams uses alias= without populate_by_name=True — passing
+        # by Python name would be treated as extra and silently dropped.
+        params_dict: dict[str, Any] = {"message": reply.text or ""}
+        if reply.thread_id:
+            params_dict["groupId"] = reply.thread_id
+        else:
+            params_dict["recipient"] = reply.channel_user_id
+        params = SendParams.model_validate(params_dict)
+
         request = SignalSendRequest(
             id=uuid.uuid4().hex,
-            params=params
+            params=params,
         )
 
         payload = request.model_dump(by_alias=True, exclude_none=True)
