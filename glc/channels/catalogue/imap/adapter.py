@@ -8,12 +8,13 @@ for the standard workflow.
 import email
 import email.policy
 import smtplib
+import hashlib
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from typing import Any
 
 from glc.channels.base import ChannelAdapter
-from glc.channels.envelope import ChannelMessage, ChannelReply
+from glc.channels.envelope import ChannelMessage, ChannelReply, Attachment
 
 # Default bot sender address used in outbound SMTP messages.
 _BOT_FROM = "bot@example.com"
@@ -28,8 +29,29 @@ class Adapter(ChannelAdapter):
         self.mock = self.config.get("mock")
         self.is_public_channel = self.config.get("is_public_channel", False)
 
+    def _parse_pdf_attachments(self, msg) -> list[Attachment]:
+        """Extract application/pdf parts, store them as artifacts, and return Attachment objects."""
+        attachments: list[Attachment] = []
+        for part in msg.iter_attachments():
+            if part.get_content_type() == "application/pdf":
+                payload = part.get_content()
+                sha = hashlib.sha256(payload).hexdigest()
+                # Use the mock's artifact store when running under tests
+                mock = self.mock
+                if mock is None:
+                    raise RuntimeError("Artifact store not configured; provide a mock via Adapter(config={'mock': …})")
+                ref = mock.store_artifact(sha, payload)
+                attachments.append(
+                    Attachment(
+                        kind="file",
+                        mime="application/pdf",
+                        ref=ref,
+                    )
+                )
+        return attachments
+
     async def on_message(self, raw: Any) -> ChannelMessage | None:
-        """Parse raw RFC 822 bytes into a ChannelMessage."""
+        """Parse raw RFC 822 bytes into a ChannelMessage, including PDF attachments."""
         raw_bytes = raw.get("raw") if isinstance(raw, dict) else raw
         if not raw_bytes:
             return None
@@ -47,13 +69,17 @@ class Adapter(ChannelAdapter):
         else:
             text_content = msg.get_content()
 
+        # PDF attachment extraction
+        attachments = self._parse_pdf_attachments(msg)
+
         return ChannelMessage(
             channel=self.name,
             channel_user_id=sender,
             user_handle=sender,
             text=text_content,
             trust_level="owner_paired",  # Placeholder for Subtask 3
-            arrived_at=datetime.now(timezone.utc)
+            arrived_at=datetime.now(timezone.utc),
+            attachments=attachments,
         )
 
     async def send(self, reply: ChannelReply) -> Any:
