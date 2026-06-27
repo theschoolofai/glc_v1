@@ -120,6 +120,8 @@ All 7 CI-required tests pass:
 
 ## Live Demo
 
+**Demo video:** [Gmail adapter — real upstream end-to-end (YouTube)](https://www.youtube.com/watch?v=JdnMkQUbnrU)
+
 End-to-end run against a real Gmail account, captured from the live server.
 
 ### 1. Inbound email arrives
