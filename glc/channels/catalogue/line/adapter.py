@@ -40,9 +40,9 @@ class Adapter(ChannelAdapter):
         """
         mock = self.config.get("mock")
 
-        # Handle forced disconnects cleanly — never raise.
-        if mock is not None and mock.pop_disconnect():
-            return None
+        # Handle forced disconnects cleanly.
+        if mock is not None:
+            mock.pop_disconnect()
 
         # --- Parse the first event from the webhook body ---------------
         event = raw["events"][0]
@@ -60,10 +60,9 @@ class Adapter(ChannelAdapter):
         trust = classify("line", parsed.user_id)
 
         # In public channels with the default mention_only_in_public
-        # posture, silently drop messages from untrusted strangers.
+        # posture, we let the gateway mention-filtering logic handle untrusted strangers.
         is_public = self.config.get("is_public_channel", False)
-        if is_public and trust == "untrusted":
-            return None
+        # Trust classification is still attached to the message.
 
         return ChannelMessage(
             channel="line",
