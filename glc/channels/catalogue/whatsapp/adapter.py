@@ -61,12 +61,15 @@ def parse_twilio_payload(payload: dict, received_at: datetime) -> dict[str, Any]
         "text": text,
         "message_id": payload.get("MessageSid"),
         "timestamp": received_at,
-        "profile_name": payload.get("ProfileName"),
+        "profile_name": payload.get("ProfileName") or None,
     }
 
 
 def build_twilio_send_payload(to_phone: str, bot_phone: str, text: str | None) -> dict[str, str]:
     """US-8: Build Twilio Sandbox outbound payload."""
+    if not text:
+        raise ValueError("build_twilio_send_payload: text must be a non-empty string")
+
     if not bot_phone.startswith("whatsapp:"):
         bot_phone = f"whatsapp:{bot_phone}"
 
@@ -76,7 +79,7 @@ def build_twilio_send_payload(to_phone: str, bot_phone: str, text: str | None) -
     return {
         "To": to_phone,
         "From": bot_phone,
-        "Body": text or "",
+        "Body": text,
     }
 
 
