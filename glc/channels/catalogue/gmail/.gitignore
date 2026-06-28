@@ -10,3 +10,6 @@ Tasks/
 
 # Screenshots hosted externally (referenced via URLs in README) — keep out of PR diff
 Images/
+
+# Runtime/demo logs — local-only, not part of the adapter deliverable
+logs/
