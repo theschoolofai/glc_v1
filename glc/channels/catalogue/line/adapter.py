@@ -28,12 +28,15 @@ Config keys read by this adapter:
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any, Literal, Protocol, overload
 
 from glc.channels.base import ChannelAdapter
 from glc.channels.envelope import ChannelMessage, ChannelReply
 from glc.security.allowlists import allowed
 from glc.security.trust_level import classify
+
+from .schemas import LineEvent
 
 
 class LineTransport(Protocol):
@@ -55,8 +58,9 @@ class LineTransport(Protocol):
     of the Protocol because Protocol members are mandatory:
 
     - ``set_reply_token(user_id, token, ttl_s=60.0) -> None`` — store an inbound
-      reply token in a TTL cache. Omit it and reply tokens are never stored, so
-      every outbound becomes a quota-costing push.
+      reply token in a TTL cache. Omit it and the adapter keeps a local
+      one-shot fallback cache so the first outbound can still use LINE's
+      quota-free reply endpoint.
     - ``pop_disconnect() -> bool`` — report whether a disconnect was signalled.
       Omit it and disconnect handling is simply skipped.
 
@@ -79,6 +83,10 @@ class Adapter(ChannelAdapter):
 
     name = "line"
 
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        super().__init__(config)
+        self._reply_tokens: dict[str, tuple[str, float]] = {}
+
     @overload
     def _transport(self, *, required: Literal[True]) -> LineTransport: ...
 
@@ -100,30 +108,55 @@ class Adapter(ChannelAdapter):
             )
         return transport
 
-    async def on_message(self, raw: Any) -> ChannelMessage:
+    def _set_local_reply_token(self, user_id: str, token: str, ttl_s: float = 60.0) -> None:
+        self._reply_tokens[user_id] = (token, monotonic() + ttl_s)
+
+    def _consume_local_reply_token(self, user_id: str) -> str | None:
+        item = self._reply_tokens.pop(user_id, None)
+        if item is None:
+            return None
+        token, expires_at = item
+        return token if expires_at >= monotonic() else None
+
+    async def on_message(self, raw: Any) -> ChannelMessage | None:  # type: ignore[override]
         transport = self._transport(required=False)
         pop_disconnect = getattr(transport, "pop_disconnect", None)
         if callable(pop_disconnect):
             pop_disconnect()
 
         event = raw["events"][0]
-        source = event["source"]
         message = event["message"]
-        user_id = source["userId"]
-        reply_token = event.get("replyToken")
+        parsed = LineEvent.model_validate(
+            {
+                "user_id": event["source"]["userId"],
+                "text": message.get("text"),
+                "reply_token": event.get("replyToken"),
+                "message_type": message.get("type", "text"),
+            }
+        )
         set_reply_token = getattr(transport, "set_reply_token", None)
-        if reply_token and callable(set_reply_token):
-            set_reply_token(user_id, reply_token)
+        if parsed.reply_token:
+            if callable(set_reply_token):
+                set_reply_token(parsed.user_id, parsed.reply_token)
+            else:
+                self._set_local_reply_token(parsed.user_id, parsed.reply_token)
 
-        trust_level = classify(self.name, user_id)
+        trust_level = classify(self.name, parsed.user_id)
         if self.config.get("is_public_channel") and trust_level == "untrusted":
-            allowed(self.name, user_id, is_public_channel=True)
+            ok, _ = allowed(
+                self.name,
+                parsed.user_id,
+                is_public_channel=True,
+                was_mentioned=bool(self.config.get("was_mentioned", False)),
+            )
+            if not ok:
+                return None
 
         return ChannelMessage(
             channel=self.name,
-            channel_user_id=user_id,
-            user_handle=user_id,
-            text=message.get("text"),
+            channel_user_id=parsed.user_id,
+            user_handle=parsed.user_id,
+            text=parsed.text,
             trust_level=trust_level,
             arrived_at=datetime.now(UTC),
         )
@@ -132,6 +165,8 @@ class Adapter(ChannelAdapter):
         transport = self._transport(required=True)
         message = {"type": "text", "text": reply.text or ""}
         reply_token = transport.consume_reply_token(reply.channel_user_id)
+        if reply_token is None:
+            reply_token = self._consume_local_reply_token(reply.channel_user_id)
 
         payload: dict[str, Any]
         if reply_token:

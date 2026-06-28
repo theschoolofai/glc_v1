@@ -54,7 +54,8 @@ The `LineTransport` contract (defined in `adapter.py`):
 
 - **Required:** `async send(payload)` and `consume_reply_token(user_id)`.
 - **Recommended:** `set_reply_token(user_id, token, ttl_s=60.0)` — omit it and
-  every reply degrades to a quota-costing push — and `pop_disconnect()`.
+  the adapter keeps a one-shot local cache so the first reply after each
+  inbound still uses LINE's quota-free reply endpoint — and `pop_disconnect()`.
 
 A complete, working reference for all three lives in `dev/live_bridge.py`:
 `RealLineTransport` (real `httpx` calls to `api.line.me`), `verify_line_signature`,

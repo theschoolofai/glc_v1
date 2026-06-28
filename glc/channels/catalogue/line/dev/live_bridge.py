@@ -150,6 +150,10 @@ async def handle_text_event(
     ask_agent: AskAgent,
 ) -> dict[str, Any]:
     message = await adapter.on_message({"destination": destination, "events": [event]})
+    if message is None:
+        print("[line] inbound dropped before relay", flush=True)
+        return {"agent_called": False, "dropped": True}
+
     print(
         f"[line] inbound user_id={message.channel_user_id} trust={message.trust_level} text={message.text!r}",
         flush=True,
