@@ -244,7 +244,7 @@ async def scenario_answers_only(ctx: Ctx) -> Outcome:
     checks: list[tuple[str, bool]] = []
     for i, question in enumerate(DEMO_CONVERSATION):
         transport = ctx.make_transport()
-        adapter = Adapter(config={"mock": transport})
+        adapter = Adapter(config={"transport": transport})
         message = await adapter.on_message(_webhook(ctx.owner_id, question, reply_token=None))
         answer = await stub_agent(message.text or "")
         result = await adapter.send(
@@ -304,7 +304,7 @@ async def scenario_disconnect(ctx: Ctx) -> Outcome:
 async def scenario_public_stranger(ctx: Ctx) -> Outcome:
     # The bridge does not set is_public_channel, so drive the Adapter directly.
     transport = ctx.make_transport()
-    adapter = Adapter(config={"mock": transport, "is_public_channel": True})
+    adapter = Adapter(config={"transport": transport, "is_public_channel": True})
     body = _webhook(ctx.stranger_id, "hi from public channel", reply_token="rt-harness-pub")
     try:
         msg = await adapter.on_message(body)
