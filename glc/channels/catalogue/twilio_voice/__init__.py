@@ -1,1 +1,1 @@
-"""Twilio Voice (PSTN in/out) adapter (stub)."""
+"""Twilio Voice (PSTN in/out) channel adapter. See README.md."""
