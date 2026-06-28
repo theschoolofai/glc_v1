@@ -69,6 +69,11 @@ Unpaired recipients are blocked before any provider send attempt.
 The provider cache is process-local and in memory only. It is intentionally
 not persisted across restarts.
 
+For real runtime use, enable `whatsapp` in your active `channels.yaml`.
+The packaged scaffold defaults most channels to disabled, and the fixed
+adapter tests exercise `on_message()` directly rather than the full gateway
+allowlist path.
+
 ## Submission
 
 Open a PR that:
