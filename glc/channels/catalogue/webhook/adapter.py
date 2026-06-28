@@ -1,12 +1,15 @@
-"""Stub adapter for Generic Webhook (HTTP in/out).
+"""Adapter for Generic Webhook (HTTP in/out).
 
-Group assignment: implement on_message and send against the mock-API
-fake in tests/channels/mocks/webhook_mock.py. See docs/ADAPTER_GUIDE.md
-for the standard workflow.
+Implemented on_message and send against the mock-API
+fake in tests/channels/mocks/webhook_mock.py.
 """
 
 from __future__ import annotations
 
+import hmac
+import os
+import time
+from hashlib import sha256
 import hmac
 import os
 import time
@@ -23,8 +26,6 @@ from glc.security.allowlists import allowed
 from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
 
-# Stripe-style webhooks reject bodies older than five minutes (replay window).
-REPLAY_WINDOW_SECONDS = 300
 
 # Stripe-style webhooks reject bodies older than five minutes (replay window).
 REPLAY_WINDOW_SECONDS = 300
@@ -118,19 +119,12 @@ class Adapter(ChannelAdapter):
 
         # Real outbound HTTPS client dispatch
         target_url = os.getenv("WEBHOOK_DEFAULT_TARGET_URL")
-        ingress_token = os.getenv("WEBHOOK_INGRESS_TOKEN")
 
         if not target_url:
             return payload
 
-        headers = {}
-        if ingress_token:
-            headers["X-GLC-Token"] = ingress_token
-
         async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                target_url, json=payload, headers=headers
-            )
+            resp = await client.post(target_url, json=payload)
             try:
                 return resp.json()
             except Exception:
