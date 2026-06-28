@@ -154,9 +154,7 @@ class Adapter(ChannelAdapter):
         # senders are dropped at the adapter level to avoid flooding the agent.
         trust_level = self._resolve_trust_level(from_addr)
 
-        if self.config.get("is_public_channel") and not self._check_allowlist(
-            from_addr, trust_level
-        ):
+        if self.config.get("is_public_channel") and not self._check_allowlist(from_addr, trust_level):
             return None  # type: ignore[return-value]
 
         # Person 6: parse body and attachments
@@ -204,9 +202,7 @@ class Adapter(ChannelAdapter):
 
             trust_level = self._resolve_trust_level(from_addr)
 
-            if self.config.get("is_public_channel") and not self._check_allowlist(
-                from_addr, trust_level
-            ):
+            if self.config.get("is_public_channel") and not self._check_allowlist(from_addr, trust_level):
                 continue
 
             text_body = self._extract_text_plain(email_msg)
@@ -476,9 +472,7 @@ class Adapter(ChannelAdapter):
         Returns:
             True if the message should be processed, False to drop.
         """
-        owner_ids = [
-            p.channel_user_id for p in get_pairing_store().owners(channel="gmail")
-        ]
+        owner_ids = [p.channel_user_id for p in get_pairing_store().owners(channel="gmail")]
         ok, _why = allowed(
             "gmail",
             sender_email,
