@@ -6,8 +6,8 @@
   PR) both read these lines. Don't remove the leading `#`.
 -->
 
-# Group: <your-group-name>
-# Slot: <your-slot-name>
+# Group: Webhook
+# Slot: webhook
 
 <!--
   Use the short form for the group name — i.e. `Telegram`, `Whisper.cpp`,
@@ -18,21 +18,20 @@
 
 ## Group
 
-- **Members**: <!-- one line per member -->
+- Tanmay Sharma @tanmays369
+- Ashwani Bindroo @AshwaniBindroo-TomTom
+- Bhuvaneshwari R @Bhuvanaa28
+- Naren V @vnaren13
+
 
 ## What this PR adds
 
 For a channel slot:
 
-- [ ] `glc/channels/catalogue/<slot>/adapter.py` — `on_message` + `send`
-- [ ] `glc/channels/catalogue/<slot>/schemas.py` — channel-specific types (if any)
-- [ ] All 7 tests at `tests/channels/test_<slot>.py` pass
+- [ ] `glc/channels/catalogue/webhook/adapter.py` — `on_message` + `send`
+- [ ] `glc/channels/catalogue/webhook/schemas.py` — channel-specific types (if any)
+- [ ] All 7 tests at `tests/channels/test_webhook.py` pass
 
-For a voice provider slot:
-
-- [ ] `glc/voice/{stt,tts}/providers/<slot>/adapter.py` — `transcribe` or `synthesize`
-- [ ] `glc/voice/{stt,tts}/providers/<slot>/schemas.py` — provider-specific types (if any)
-- [ ] All 7 tests at `tests/voice/{stt,tts}/test_<slot>.py` pass
 
 ## Demo
 

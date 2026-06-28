@@ -13,6 +13,8 @@ import time
 from hashlib import sha256
 from typing import Any
 
+import httpx
+
 from glc.channels.base import ChannelAdapter
 from glc.channels.envelope import ChannelMessage, ChannelReply
 
@@ -51,7 +53,34 @@ class Adapter(ChannelAdapter):
         )
 
     async def send(self, reply: ChannelReply) -> Any:
-        raise NotImplementedError(
-            "Group assignment: implement on_message and send. "
-            "See docs/ADAPTER_GUIDE.md and glc/channels/catalogue/webhook/README.md."
-        )
+        payload = {
+            "recipient_id": reply.channel_user_id,
+            "text": reply.text,
+        }
+
+        mock = self.config.get("mock")
+        if mock is not None:
+            return await mock.send(payload)
+
+        # Real outbound HTTPS client dispatch
+        target_url = os.getenv("WEBHOOK_DEFAULT_TARGET_URL")
+        ingress_token = os.getenv("WEBHOOK_INGRESS_TOKEN")
+
+        if not target_url:
+            return payload
+
+        headers = {}
+        if ingress_token:
+            headers["X-GLC-Token"] = ingress_token
+
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                target_url, json=payload, headers=headers
+            )
+            try:
+                return resp.json()
+            except Exception:
+                return {
+                    "status": resp.status_code,
+                    "text": resp.text
+                }
