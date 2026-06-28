@@ -34,6 +34,6 @@ install_token
 
 # Old generator artifacts
 /tmp/
-.env.example
+
 # Logs
 *.log
