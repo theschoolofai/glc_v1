@@ -39,6 +39,29 @@ The failing tests live at `tests/channels/test_line.py`. They cover:
 The mock-API fake at `tests/channels/mocks/line_mock.py` is your contract
 surface. Do **not** edit the mock or the test file — they are fixed.
 
+## Reusing this adapter outside the test harness
+
+`adapter.py` is a **wire-format translator only** — it is not a standalone LINE
+bot. To run a real bot you must supply three things around it:
+
+| Responsibility | What you provide |
+| --- | --- |
+| Webhook server  | An HTTP endpoint that receives LINE's POSTs and calls `Adapter.on_message(raw)`. |
+| Signature check | Verify the `X-Line-Signature` header (HMAC-SHA256 over the raw body with the channel secret, base64) **before** trusting the payload. |
+| Transport       | An object satisfying the `LineTransport` Protocol, injected via `config={"transport": ...}` (the `"mock"` key is a back-compat alias). |
+
+The `LineTransport` contract (defined in `adapter.py`):
+
+- **Required:** `async send(payload)` and `consume_reply_token(user_id)`.
+- **Recommended:** `set_reply_token(user_id, token, ttl_s=60.0)` — omit it and
+  the adapter keeps a one-shot local cache so the first reply after each
+  inbound still uses LINE's quota-free reply endpoint — and `pop_disconnect()`.
+
+A complete, working reference for all three lives in `dev/live_bridge.py`:
+`RealLineTransport` (real `httpx` calls to `api.line.me`), `verify_line_signature`,
+and `BridgeConfig.from_env` (loads `LINE_CHANNEL_ACCESS_TOKEN` /
+`LINE_CHANNEL_SECRET`).
+
 ## Submission
 
 Open a PR that:
