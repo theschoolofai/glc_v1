@@ -4,7 +4,7 @@ client_secret_*.json
 .env
 !.env.example
 /Docs
-
+.env.example 
 # Local-only working notes — not part of the adapter deliverable
 Tasks/
 
