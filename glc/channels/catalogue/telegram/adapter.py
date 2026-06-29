@@ -17,6 +17,8 @@ from glc.security.allowlists import allowed
 from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
 
+from .schemas import TelegramUpdate
+
 
 class Adapter(ChannelAdapter):
     name = "telegram"
@@ -34,24 +36,25 @@ class Adapter(ChannelAdapter):
                     arrived_at=datetime.now(UTC),
                 )
 
-        message = raw.get("message")
-        if not message:
+        update = TelegramUpdate.model_validate(raw)
+
+        if update.message is None:
             return None
+
+        message = update.message
 
         # Extract user information from "from" block, falling back to "chat" block
-        from_user = message.get("from") or {}
-        user_id = from_user.get("id")
-        if user_id is None:
-            user_id = message.get("chat", {}).get("id")
-        if user_id is None:
-            return None
+        sender = message.from_
 
-        channel_user_id = str(user_id)
+        if sender is None:
+            channel_user_id = str(message.chat.id)
+            user_handle = message.chat.username or channel_user_id
+        else:
+            channel_user_id = str(sender.id)
+            user_handle = sender.username or channel_user_id
 
         # Get handle/username
-        user_handle = from_user.get("username")
         if not user_handle:
-            # Fallback
             store = get_pairing_store()
             rec = store.lookup(self.name, channel_user_id)
             user_handle = rec.user_handle if rec else channel_user_id
@@ -73,14 +76,18 @@ class Adapter(ChannelAdapter):
                 return None
 
         # Parse text and photo attachments
-        text = message.get("text") or message.get("caption")
+        text = message.text or message.caption
 
         attachments: list[Attachment] = []
-        photo = message.get("photo")
+        photo = message.photo
         if photo:
             # Find the largest photo size
-            largest = max(photo, key=lambda p: p.get("file_size", 0) or p.get("width", 0) * p.get("height", 0))
-            file_id = largest.get("file_id")
+            largest = max(
+                photo,
+                key=lambda p: p.file_size or (p.width * p.height),
+            )
+
+            file_id = largest.file_id
             if file_id:
                 ref = ""
                 if mock is not None:
@@ -118,7 +125,7 @@ class Adapter(ChannelAdapter):
 
         # Arrived at
         try:
-            arrived_at = datetime.fromtimestamp(float(message.get("date")), UTC)
+            arrived_at = datetime.fromtimestamp(float(message.date),UTC)
         except (ValueError, TypeError):
             arrived_at = datetime.now(UTC)
 
