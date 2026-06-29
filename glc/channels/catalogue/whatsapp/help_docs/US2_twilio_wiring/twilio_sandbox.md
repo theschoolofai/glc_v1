@@ -103,7 +103,7 @@ Create a `.env` file in your project root (gitignored) with:
 ```env
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=your_auth_token_here
-TWILIO_SANDBOX_NUMBER=whatsapp:+14155238886      # From WhatsApp Sandbox page
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886      # From WhatsApp Sandbox page
 TWILIO_TEST_TO=whatsapp:+91xxxxxxxxxx           # Your phone in WhatsApp format
 TWILIO_WEBHOOK_URL=https://abc.ngrok.io/webhook # Your public webhook URL (e.g., ngrok tunnel)
 ```
@@ -111,7 +111,7 @@ TWILIO_WEBHOOK_URL=https://abc.ngrok.io/webhook # Your public webhook URL (e.g.,
 Values:
 
 - `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`: From Twilio Console → Account (Project) settings.
-- `TWILIO_SANDBOX_NUMBER`: The WhatsApp sandbox number shown on the **WhatsApp Sandbox** page.
+- `TWILIO_WHATSAPP_FROM`: The WhatsApp sandbox number shown on the **WhatsApp Sandbox** page.
 - `TWILIO_TEST_TO`: Your personal WhatsApp number with `whatsapp:` prefix and country code.
 - `TWILIO_WEBHOOK_URL`: The full public webhook URL that matches what you configured in the Twilio Console (e.g., your ngrok or cloudflared tunnel). This **must match exactly** what Twilio has on file (same protocol, domain, and path), as Twilio uses this URL for signature validation.
 
@@ -138,7 +138,7 @@ auth_token = os.getenv("TWILIO_AUTH_TOKEN")
 client = Client(account_sid, auth_token)
 
 message = client.messages.create(
-    from_=os.getenv("TWILIO_SANDBOX_NUMBER"),
+    from_=os.getenv("TWILIO_WHATSAPP_FROM"),
     to=os.getenv("TWILIO_TEST_TO"),
     body="Twilio WhatsApp sandbox wiring test from .env",
 )

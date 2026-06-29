@@ -521,7 +521,7 @@ media-only message.
 ### §7.8 US-8 — `build_twilio_send_payload`
 **Branch:** `feature/us8-build-twilio-send-payload`
 ```python
-{"From": f"whatsapp:{TWILIO_SANDBOX_NUMBER}",
+{"From": f"whatsapp:{TWILIO_WHATSAPP_FROM}",
  "To": f"whatsapp:{reply.channel_user_id}",
  "Body": reply.text}
 # POSTed as form data (not JSON) to

@@ -13,10 +13,10 @@ def send_sandbox_message():
         print("Missing TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN")
         return
 
-    from_number = os.getenv("TWILIO_SANDBOX_NUMBER")
+    from_number = os.getenv("TWILIO_WHATSAPP_FROM")
     to_number = os.getenv("TWILIO_TEST_TO")
     if not from_number or not to_number:
-        print("Missing TWILIO_SANDBOX_NUMBER or TWILIO_TEST_TO")
+        print("Missing TWILIO_WHATSAPP_FROM or TWILIO_TEST_TO")
         return
 
     print(f"acc_sid {acc_sid}, token {token[:-4]}...")

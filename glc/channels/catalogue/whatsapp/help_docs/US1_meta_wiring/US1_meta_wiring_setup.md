@@ -490,7 +490,7 @@ WHATSAPP_VERIFY_TOKEN=glc-verify-token-us1
 # ---------------------------------------------------------------------------
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
-TWILIO_SANDBOX_NUMBER=
+TWILIO_WHATSAPP_FROM=
 TWILIO_WEBHOOK_URL=
 ```
 

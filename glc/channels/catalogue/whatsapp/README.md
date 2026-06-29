@@ -24,9 +24,8 @@ Meta Cloud API:
 Twilio Sandbox:
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
-- `TWILIO_SANDBOX_NUMBER`
+- `TWILIO_WHATSAPP_FROM`
 - `TWILIO_WEBHOOK_URL`
-- `TWILIO_TEST_TO`
 
 Never commit real values — store them in a local `.env` file (already gitignored).
 
@@ -52,6 +51,28 @@ The failing tests live at `tests/channels/test_whatsapp.py`. They cover:
 
 The mock-API fake at `tests/channels/mocks/whatsapp_mock.py` is your contract
 surface. Do **not** edit the mock or the test file — they are fixed.
+
+## Outbound policy
+
+The WhatsApp `send()` path is a dual-provider orchestrator. It uses the last
+verified inbound provider for a recipient when available, otherwise it tries
+Meta Cloud API first and falls back to Twilio Sandbox only when Meta returns
+error code `131030`.
+
+Outbound replies are allowed for any paired recipient:
+
+- `owner_paired`
+- `user_paired`
+
+Unpaired recipients are blocked before any provider send attempt.
+
+The provider cache is process-local and in memory only. It is intentionally
+not persisted across restarts.
+
+For real runtime use, enable `whatsapp` in your active `channels.yaml`.
+The packaged scaffold defaults most channels to disabled, and the fixed
+adapter tests exercise `on_message()` directly rather than the full gateway
+allowlist path.
 
 ## Submission
 
