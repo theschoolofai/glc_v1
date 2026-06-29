@@ -11,7 +11,6 @@ dependencies = [
     "pydantic>=2.6",
     "jsonschema>=4.21",
     "pyyaml>=6.0",
-    "twilio>=9.0",
     "websockets>=12.0",
 ]
 

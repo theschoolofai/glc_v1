@@ -13,7 +13,6 @@ htmlcov/
 
 # uv / venv
 .venv/
-.pip-cache/
 .env
 .env.*
 
@@ -38,8 +37,3 @@ install_token
 
 # Logs
 *.log
-
-# Local WhatsApp planning docs
-WHATSAPP_DOC_INDEX.md
-glc/channels/catalogue/whatsapp/help_docs/US10_DECISIONS_AND_ASSUMPTIONS.md
-glc/channels/catalogue/whatsapp/help_docs/US10_SEND_ORCHESTRATOR_PLAN.md
