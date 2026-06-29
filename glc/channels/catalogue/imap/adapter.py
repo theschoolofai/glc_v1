@@ -28,6 +28,10 @@ class Adapter(ChannelAdapter):
         # In tests, the config contains a "mock" key pointing to the ImapMock instance.
         self.mock = self.config.get("mock")
         self.is_public_channel = self.config.get("is_public_channel", False)
+        # Maps thread_id (Message-ID header) -> original Subject so send()
+        # can build "Re: <subject>" per-thread. Keyed by thread_id (not sender)
+        # so users with multiple threads each get the correct reply subject.
+        self._subject_cache: dict[str, str] = {}
 
     def _parse_pdf_attachments(self, msg) -> list[Attachment]:
         """Extract application/pdf parts, store them as artifacts, and return Attachment objects."""
@@ -59,6 +63,13 @@ class Adapter(ChannelAdapter):
         msg = email.message_from_bytes(raw_bytes, policy=email.policy.default)
         sender = msg.get("From", "")
 
+        # Cache subject keyed by Message-ID (thread_id) so multiple threads
+        # from the same user each get the correct "Re: <subject>" on reply.
+        thread_id = msg.get("Message-ID", "").strip() or None
+        subject = msg.get("Subject", "")
+        if thread_id and subject:
+            self._subject_cache[thread_id] = subject
+
         # Text extraction
         text_content = ""
         if msg.is_multipart():
@@ -80,6 +91,7 @@ class Adapter(ChannelAdapter):
             trust_level="owner_paired",  # Placeholder for Subtask 3
             arrived_at=datetime.now(timezone.utc),
             attachments=attachments,
+            thread_id=thread_id,
         )
 
     async def send(self, reply: ChannelReply) -> Any:
@@ -96,7 +108,12 @@ class Adapter(ChannelAdapter):
         bot_from = self.config.get("bot_from", _BOT_FROM)
         out["From"] = bot_from
         out["To"] = reply.channel_user_id
-        out["Subject"] = "Re: message"
+        # For replies: look up the cached subject by thread_id.
+        # For agent-initiated emails (no prior inbound): use config default_subject.
+        if reply.thread_id and reply.thread_id in self._subject_cache:
+            out["Subject"] = f"Re: {self._subject_cache[reply.thread_id]}"
+        else:
+            out["Subject"] = self.config.get("default_subject", "Message from bot")
         out.set_content(reply.text or "")
 
         payload: dict[str, Any] = {
