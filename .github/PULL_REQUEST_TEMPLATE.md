@@ -1,20 +1,14 @@
 # Implementation PR
 
-<!--
-  KEEP the two markers below intact. The boundary check (which paths
-  you can touch) and the scorecard bot (the comment you'll see on this
-  PR) both read these lines. Don't remove the leading `#`.
--->
+> [!IMPORTANT]
+> **Edit the two `# Group:` and `# Slot:` lines below before pushing.** The boundary check reads them literally.
+>
+> - **Group**: the name as it appears in [`GROUPS.md`](../blob/main/GROUPS.md), e.g. `Telegram`, `Whisper.cpp`, `Gemini Live STT`.
+>   Do **not** use `group-telegram`, `group-whisper-cpp`, or any other variation.
+> - **Slot**: the lowercase identifier from the same row, e.g. `telegram`, `whisper_cpp`, `gemini_live_stt`.
 
-# Group: <your-group-name>
-# Slot: <your-slot-name>
-
-<!--
-  Use the short form for the group name — i.e. `Telegram`, `Whisper.cpp`,
-  `Gemini Live STT` — not `Group Telegram`. The slot is the lowercase
-  identifier from the table in GROUPS.md, e.g. `telegram`, `whisper_cpp`,
-  `gemini_live_stt`.
--->
+# Group: EDIT_ME_GROUP_NAME
+# Slot: EDIT_ME_SLOT
 
 ## Group
 

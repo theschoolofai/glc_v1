@@ -29,7 +29,7 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-GROUP_MARKER_RE = re.compile(r"^\s*#\s*Group:\s*([\w-]+)\s*$", re.IGNORECASE | re.MULTILINE)
+GROUP_MARKER_RE = re.compile(r"^\s*#\s*Group:\s*([^\r\n]+?)\s*$", re.IGNORECASE | re.MULTILINE)
 SLOT_MARKER_RE = re.compile(r"^\s*#\s*Slot:\s*([\w-]+)\s*$", re.IGNORECASE | re.MULTILINE)
 DEMO_RE = re.compile(r"(youtube\.com|youtu\.be|loom\.com|vimeo\.com)", re.IGNORECASE)
 
