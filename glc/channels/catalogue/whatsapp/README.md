@@ -35,7 +35,7 @@ Both are accessible for testing and both are free to start. The main practical d
 
 ## Prerequisites
 
-Enable the WhatsApp channel in `glc/channels.yaml` by setting `whatsapp: {enabled: true}`.
+Enable the WhatsApp channel in `glc/channels.yaml` by setting `whatsapp: {enabled: true}`. By default it is disabled.
 
 Create a `.env` file at the project root (it is already gitignored). Fill in the variables for the provider(s) you are setting up.
 
