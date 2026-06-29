@@ -52,36 +52,36 @@ senders are checked against the channel's `allowed_senders` allowlist in
 { "recipient_id": "<channel_user_id>", "text": "<reply text>" }
 ```
 
-The payload is POSTed as JSON to `WEBHOOK_DEFAULT_TARGET_URL`. If
-`WEBHOOK_INGRESS_TOKEN` is set, it is sent as `X-GLC-Token`. Rate-limit
-responses (HTTP 429) are propagated back to the caller as
-`{"status": 429, ...}`.
+The payload is POSTed as JSON to `WEBHOOK_DEFAULT_TARGET_URL`. If no target
+URL is configured, the payload is returned unchanged (handy in tests). A
+JSON response is returned as-is; a non-JSON response is returned as
+`{"status": <code>, "text": ...}`.
 
 ## schemas.py
 
-`WebhookPayload` is a Pydantic model that validates the parsed JSON body of
+`WebhookInbound` is a Pydantic model that validates the parsed JSON body of
 every inbound webhook event after signature verification passes:
 
 | Field | Type | Description |
 |---|---|---|
 | `sender_id` | `str` | Unique ID of the sending system/user |
-| `sender_handle` | `str` | Human-readable display name (optional, defaults to `""`) |
+| `sender_handle` | `str` | Human-readable display name (required) |
 | `text` | `str \| None` | Message text payload |
 | `metadata` | `dict` | Arbitrary extra fields forwarded into `ChannelMessage.metadata` |
 
 ## Adapter helpers + methods
 
-### `_verify(headers, raw_body) -> int | None`
+### `_verify(raw_body, headers) -> bool`
 
 Private helper. Parses `X-Webhook-Signature`, validates HMAC-SHA256, and
-enforces the 5-minute replay window. Returns the parsed Unix timestamp on
-success, or `None` on any failure. Called at the top of `on_message` so
-all auth logic stays in one place.
+enforces the 5-minute replay window. Returns `True` only when the signature
+is valid and the timestamp is fresh, otherwise `False`. Called at the top of
+`on_message` so all auth logic stays in one place.
 
 ### `on_message(raw) -> ChannelMessage | None`
 
 Accepts a dict `{"raw_body": bytes, "headers": dict}`. Calls `_verify`,
-parsing the body with `WebhookPayload`, classifies trust via
+parsing the body with `WebhookInbound`, classifies trust via
 `glc.security.trust_level.classify()`, applies the public-channel allowlist
 if needed, and returns a `ChannelMessage`. Returns `None` on any auth or
 validation failure, and also handles mock disconnects gracefully.
