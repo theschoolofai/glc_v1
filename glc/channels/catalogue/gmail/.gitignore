@@ -1,0 +1,15 @@
+credentials.json
+token.json
+client_secret_*.json
+.env
+!.env.example
+/Docs
+.env.example 
+# Local-only working notes — not part of the adapter deliverable
+Tasks/
+
+# Screenshots hosted externally (referenced via URLs in README) — keep out of PR diff
+Images/
+
+# Runtime/demo logs — local-only, not part of the adapter deliverable
+logs/

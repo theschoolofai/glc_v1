@@ -1,1 +1,1 @@
-"""Laptop microphone (local voice-first) adapter (stub)."""
+"""Laptop microphone (local voice-first) adapter."""
