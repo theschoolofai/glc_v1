@@ -9,10 +9,6 @@ from __future__ import annotations
 import hmac
 import os
 import time
-from hashlib import sha256
-import hmac
-import os
-import time
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any, cast
@@ -25,7 +21,6 @@ from glc.channels.envelope import ChannelMessage, ChannelReply
 from glc.security.allowlists import allowed
 from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
-
 
 # Stripe-style webhooks reject bodies older than five minutes (replay window).
 REPLAY_WINDOW_SECONDS = 300
