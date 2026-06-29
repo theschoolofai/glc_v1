@@ -64,6 +64,45 @@ def normalize_group(name: str) -> str:
     return n
 
 
+PLACEHOLDER_VALUES = {
+    "edit_me_group_name",
+    "<your-group-name>",
+    "<group-name>",
+    "<replace-me>",
+    "your-group-name",
+}
+
+
+def suggest_group_fix(group: str, rows: list[tuple[str, str, list[str]]]) -> str:
+    """Return a one-line hint for an unrecognised group value."""
+    lowered = group.strip().lower()
+    valid = sorted({g for _s, g, _gl in rows})
+
+    # 1) Student left the PR-template placeholder in.
+    if "<" in group or lowered in PLACEHOLDER_VALUES or "edit_me" in lowered:
+        return (
+            "you left the PR-template placeholder in. Edit the `# Group:` and "
+            "`# Slot:` lines in the PR description to match your row in GROUPS.md."
+        )
+
+    # 2) Common bug: `group-X` with a hyphen instead of `X`.
+    if lowered.startswith("group-"):
+        rest = group[len("group-") :].replace("-", " ").replace("_", " ").strip()
+        target = rest.lower()
+        for v in valid:
+            if normalize_group(v) == target:
+                return (
+                    f"did you mean `# Group: {v}`? GROUPS.md uses the plain name without the `group-` prefix."
+                )
+        return (
+            "GROUPS.md uses the plain name without the `group-` prefix. "
+            f"Try `# Group: {rest.title()}` (one of: {', '.join(valid)})."
+        )
+
+    # 3) Anything else — list the valid names so the student can pick.
+    return f"valid `# Group:` values from GROUPS.md: {', '.join(valid)}"
+
+
 def parse_claims(text: str) -> list[tuple[str, str, list[str]]]:
     """Returns [(slot, group, [owned_globs])] for non-header, non-divider rows."""
     rows: list[tuple[str, str, list[str]]] = []
@@ -149,6 +188,7 @@ def main() -> int:
     globs = claimed_globs(rows, group)
     if not globs:
         print(f"[boundary] FAIL: group {group!r} has no claimed slot in GROUPS.md")
+        print(f"[boundary] hint: {suggest_group_fix(group, rows)}")
         return 2
 
     files = git_diff_names(args.base, args.head)
