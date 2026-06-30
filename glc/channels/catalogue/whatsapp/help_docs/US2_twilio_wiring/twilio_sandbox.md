@@ -4,17 +4,11 @@
 
 1. Go to [Twilio Console](https://console.twilio.com/).
 2. Complete account signup and verify your email and phone number.
-3. When prompted, choose **Continue with trial** — the free trial is sufficient for sandbox testing.
-
-![Step 1 — Choose how to get started: Trial or Pay as you go](screenshots/01_choose_plan.png)
-
-4. Once logged in, scroll down on the Account Dashboard to the **Account Info** section and note:
+3. From the Twilio Console home/account area, note:
    - `Account SID`
-   - `Auth Token` (click **Show** to reveal it)
+   - `Auth Token`
 
-![Step 1 — Account Dashboard showing Account SID and Auth Token](screenshots/02_account_credentials.png)
-
-These are the credentials you will later place in your local `.env`.
+These are the credentials you will later place in your local `.env`. 
 
 ---
 
@@ -22,15 +16,9 @@ These are the credentials you will later place in your local `.env`.
 
 In the Twilio Console:
 
-1. Open **Messaging** in the left sidebar.
+1. Open **Messaging**.
 2. Go to **Try it out**.
 3. Click **Send a WhatsApp message**.
-
-Twilio will show an **Activate Your Sandbox** modal with its terms of service.
-
-4. Check **”I acknowledge and agree to the foregoing terms and conditions”** and click **Confirm**.
-
-![Step 2 — Activate Your Sandbox modal](screenshots/03_activate_sandbox.png)
 
 On this page, Twilio shows the **WhatsApp Sandbox** details, including:
 
@@ -39,18 +27,16 @@ On this page, Twilio shows the **WhatsApp Sandbox** details, including:
 - A QR code that can prefill the join message.
 - Sandbox settings for inbound webhook URLs.
 
+If Twilio asks you to accept or confirm WhatsApp Sandbox terms, do that first to activate the sandbox.
+
 ---
 
 ### 3. Join the sandbox from your WhatsApp mobile app
 
-After activating, you land on the **Connect to WhatsApp Sandbox** page showing the sandbox number and join code.
-
-![Step 3 — Connect to WhatsApp Sandbox: sandbox number, join code, and QR code](screenshots/04_join_sandbox.png)
-
 From your personal phone:
 
 1. Open **WhatsApp**.
-2. Start a chat with the sandbox number shown on screen.
+2. Start a chat with the sandbox number shown in Twilio Console.
 3. Send the exact join message shown on the page:
 
 ```text
@@ -65,7 +51,11 @@ join white-butterfly
 
 Twilio should reply in WhatsApp confirming that your phone number has joined the sandbox.
 
-**Alternative:** Scan the QR code shown on the page — WhatsApp will open with the join message prefilled. Send that message to complete the join.
+Alternative:
+
+- Scan the QR code shown on the Twilio Sandbox page.
+- WhatsApp will open with the join message prefilled.
+- Send that message to complete the join.
 
 ---
 
@@ -85,25 +75,24 @@ At least one end user must join the sandbox before Twilio can send or receive Wh
 
 ### 5. Optional next step in Twilio Console
 
-Still on the WhatsApp Sandbox page, open the **Sandbox Settings** tab and locate:
+Still on the WhatsApp Sandbox page, open **Sandbox Settings** and locate:
 
-- **When a message comes in** — paste your tunnel URL here (e.g. ngrok or cloudflared endpoint)
-- **Status callback URL** (optional, for delivery tracking)
+- **When a message comes in**
+- **Status callback URL** (if you plan to track delivery updates)
 
-This is where you configure the webhook URL so Twilio knows where to send inbound messages.
+For US-2, this is where you will later paste your tunnel URL, such as an ngrok or cloudflared endpoint pointing to your local WhatsApp adapter route.
 
 ---
 
 ### 6. What “done” looks like
 
-You can consider Twilio setup complete when:
+You can consider Twilio website setup complete when:
 
 - Your Twilio account is active.
 - You have saved `Account SID` and `Auth Token`.
-- Your personal WhatsApp number sent the `join <code>` message and Twilio confirmed the join.
-- You can see an inbound message from your phone appearing in the Twilio sandbox console — the **User-Initiated conversation** step shows your message body.
-
-![Step 6 — User-Initiated conversation confirmed in Twilio sandbox](screenshots/05_user_initiated_message.png)
+- You reached **Messaging → Try it out → Send a WhatsApp message**.
+- Your personal WhatsApp number sent the `join <code>` message.
+- Twilio confirmed the sandbox join in WhatsApp. 
 
 ## Twilio WhatsApp: Env setup and send test
 
