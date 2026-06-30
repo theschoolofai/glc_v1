@@ -25,7 +25,6 @@ from glc.config import get_or_create_install_token
 load_dotenv(Path(__file__).parent.parent.parent.parent.parent / ".env")
 
 
-
 class RealDiscordClient:
     """Client transport wrapper passed to the adapter under config['client'].
 
@@ -119,7 +118,6 @@ async def run_bridge():
         # 3. Connect to Discord Gateway
         discord_ws_url = "wss://gateway.discord.gg/?v=10&encoding=json"
         async with websockets.connect(discord_ws_url) as discord_ws:
-
             # 4. Handle initial Discord handshake (Hello payload)
             hello_msg = await discord_ws.recv()
             hello_data = json.loads(hello_msg)
@@ -135,12 +133,8 @@ async def run_bridge():
                 "d": {
                     "token": bot_token,
                     "intents": 37377,
-                    "properties": {
-                        "os": sys.platform,
-                        "browser": "glc_bridge",
-                        "device": "glc_bridge"
-                    }
-                }
+                    "properties": {"os": sys.platform, "browser": "glc_bridge", "device": "glc_bridge"},
+                },
             }
             await discord_ws.send(json.dumps(identify_payload))
             print("[bridge] identified with Discord gateway. Listening for events...")
