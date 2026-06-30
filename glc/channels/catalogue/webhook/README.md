@@ -1,50 +1,94 @@
 # Generic Webhook (HTTP in/out)
 
-This is a **group assignment** in Session 11. Implement the webhook adapter
-to make the test suite at `tests/channels/test_webhook.py` pass.
+Stateless HTTP adapter for generic signed webhooks. Inbound requests are
+authenticated using **Stripe/SVIX-style HMAC-SHA256 signatures**; outbound
+replies are POSTed to a configured callback URL.
 
-## What you build
+## Inbound authentication
 
-Two files under this directory:
+Every inbound POST must carry the header:
 
-- `adapter.py` — subclass `glc.channels.base.ChannelAdapter` and implement
-  `on_message(raw) -> ChannelMessage` and `send(reply) -> Any`.
-- `schemas.py` — any channel-specific Pydantic types you need.
+```
+X-Webhook-Signature: t=<unix_timestamp>,v1=<hex_hmac_sha256>
+```
 
-## Required environment variables
+The adapter reconstructs the signed string `f"{t}.{raw_body}"`, computes
+`HMAC-SHA256` using `WEBHOOK_SHARED_SECRET`, and compares it against `v1`
+with a constant-time `hmac.compare_digest` to prevent timing attacks.
 
-- `WEBHOOK_INGRESS_TOKEN`
-- `WEBHOOK_DEFAULT_TARGET_URL`
+### Replay window
 
-## Free-tier limits
+After verifying the signature, the adapter checks `abs(time.time() - t) <= 300`.
+Any request older than **5 minutes** — or with a future timestamp beyond that
+window — is rejected, even if the HMAC is correct. This closes the replay-attack
+vector: a captured valid request cannot be re-submitted later.
 
-Free — the adapter is an HTTP listener; cost depends on the integrating service.
+Unsigned bodies, missing/malformed `X-Webhook-Signature`, bad HMAC, or expired
+timestamps all cause `on_message` to return `None`. The gateway drops the event
+silently and nothing is forwarded to the agent.
 
-## Wire-format quirks to expect
+## Environment variables
 
-Payload shape is caller-defined. Adapter must validate against a per-integration secret token (X-GLC-Token header) before constructing an envelope.
+| Variable | Direction | Purpose |
+|---|---|---|
+| `WEBHOOK_SHARED_SECRET` | inbound | HMAC key; must match the secret registered with the caller |
+| `WEBHOOK_DEFAULT_TARGET_URL` | outbound | URL to POST replies to |
 
-## Tests you need to pass
+## Trust model
 
-The failing tests live at `tests/channels/test_webhook.py`. They cover:
+| Sender | Trust level |
+|---|---|
+| Paired as owner via `force_pair_owner` | `owner_paired` |
+| Paired via normal pairing flow | `user_paired` |
+| Unknown sender | `untrusted` |
 
-1. `on_message` builds a valid `ChannelMessage` for owner and stranger inputs.
-2. Trust level resolves to `owner_paired` / `user_paired` / `untrusted` correctly.
-3. `send` produces a valid wire-format payload and reaches the mock.
-4. The adapter handles forced disconnects without raising.
-5. Rate-limit responses propagate to the caller as a 429.
-6. In public channels with the default `mention_only_in_public: true`, the
-   adapter consults the allowlist before processing strangers.
+In public-channel mode (`config["is_public_channel"] = True`), untrusted
+senders are checked against the channel's `allowed_senders` allowlist in
+`channels.yaml`. Senders not on the list are silently dropped.
 
-The mock-API fake at `tests/channels/mocks/webhook_mock.py` is your contract
-surface. Do **not** edit the mock or the test file — they are fixed.
+## Outbound wire format
 
-## Submission
+```json
+{ "recipient_id": "<channel_user_id>", "text": "<reply text>" }
+```
 
-Open a PR that:
+The payload is POSTed as JSON to `WEBHOOK_DEFAULT_TARGET_URL`. If no target
+URL is configured, the payload is returned unchanged (handy in tests). A
+JSON response is returned as-is; a non-JSON response is returned as
+`{"status": <code>, "text": ...}`.
 
-- Adds your `adapter.py` and `schemas.py`.
-- Passes `pytest tests/channels/test_webhook.py`.
-- Updates `CLAIMS.md` if you have not already claimed this channel.
+## schemas.py
 
-CI gates merge through branch protection. A TA reviews before merge.
+`WebhookInbound` is a Pydantic model that validates the parsed JSON body of
+every inbound webhook event after signature verification passes:
+
+| Field | Type | Description |
+|---|---|---|
+| `sender_id` | `str` | Unique ID of the sending system/user |
+| `sender_handle` | `str` | Human-readable display name (required) |
+| `text` | `str \| None` | Message text payload |
+| `metadata` | `dict` | Arbitrary extra fields forwarded into `ChannelMessage.metadata` |
+
+## Adapter helpers + methods
+
+### `_verify(raw_body, headers) -> bool`
+
+Private helper. Parses `X-Webhook-Signature`, validates HMAC-SHA256, and
+enforces the 5-minute replay window. Returns `True` only when the signature
+is valid and the timestamp is fresh, otherwise `False`. Called at the top of
+`on_message` so all auth logic stays in one place.
+
+### `on_message(raw) -> ChannelMessage | None`
+
+Accepts a dict `{"raw_body": bytes, "headers": dict}`. Calls `_verify`,
+parsing the body with `WebhookInbound`, classifies trust via
+`glc.security.trust_level.classify()`, applies the public-channel allowlist
+if needed, and returns a `ChannelMessage`. Returns `None` on any auth or
+validation failure, and also handles mock disconnects gracefully.
+
+### `send(reply) -> Any`
+
+Builds `{"recipient_id": ..., "text": ...}` and dispatches it. In test mode
+(`config["mock"]`) it calls `mock.send(payload)` directly. In production it
+POSTs to `WEBHOOK_DEFAULT_TARGET_URL` via `httpx`, propagating any HTTP
+error response (including 429) back to the caller.
