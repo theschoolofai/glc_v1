@@ -130,7 +130,7 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
         depends on: M5, M6 (basic paths working)
 
 [PHASE 5 — Integration]
-  M1 (Leader): Integration, final review, all 7 tests green, open PR
+  M1 (jssunil): Integration, final review, all 7 tests green, open PR
         depends on: all above
 ```
 
@@ -141,7 +141,7 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 
 ## 5. Task Distribution (11 Members)
 
-### Member 1 — Team Leader (You)
+### Member 1 — `jssunil` — Integration Lead
 - **Status:** ⚠️ Partially Done
 - **GitHub User:** `jssunil` (js.sunilkumar@gmail.com)
 - **Objective:** Interface design, integration coordination, PR creation, and validation.
@@ -313,12 +313,12 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 
 ---
 
-## 6. Leader Responsibilities
+## 6. `jssunil` (Integration Lead) Responsibilities
 
 | Responsibility | Detail |
 |---|---|
-| **Branching Strategy** | Create a target branch `feat/discord-channel`. Enforce separate feature branches for each task and handle pull requests sequentially. |
-| **Integration Sequence** | Merge sequentially: M4 skeleton → M8 schemas → M5 parser & M6 sender → M7 allowlist & M10 mentions → M9 type fixes & M10 error handlers. |
+| **Branching Strategy** | Created branch `glc_v1_g2_discord_impl`. Coordinated integrations from `mkthoma` and `shashanklal`. |
+| **Integration Sequence** | Merged sequentially: M4 skeleton → M8 schemas → M5 parser & M6 sender → M7 allowlist & M10 mentions → M9 type fixes & M10 error handlers. |
 | **CI Validations** | Monitor scorecard comments on the implementation PR. Ensure test validations, boundaries, and static checks pass cleanly. |
 | **Grader Coordination** | Coordinate with class coordinators, prepare the submission form, and ensure the PR descriptions carry the proper `# Group` and `# Slot` markers. |
 
@@ -328,30 +328,30 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 
 ```
 Day 1:
-  M1: Define integration plans and branch strategy.
-  M2: Analyze mock framework and write test-case contracts.
-  M3: Research gateway and REST schemas from Discord developer docs.
-  M9: Note pyproject.toml guidelines.
+  jssunil (M1): Define integration plans and branch strategy.
+  jssunil (M2): Analyze mock framework and write test-case contracts.
+  jssunil (M3): Research gateway and REST schemas from Discord developer docs.
+  jssunil (M9): Note pyproject.toml guidelines.
 
 Day 2:
-  M4: Implement Adapter skeleton and disconnect hooks.
-  M8: Create Pydantic templates in schemas.py.
-  M11: Set up the Discord application, bot token, and server.
+  shashanklal (M4): Implement Adapter skeleton and disconnect hooks.
+  mkthoma (M8): Create Pydantic templates in schemas.py.
+  jssunil (M11): Set up the Discord application, bot token, and server.
 
 Day 3:
-  M5: Implement MESSAGE_CREATE parsing.
-  M6: Implement outgoing REST message mapping.
-  M7: Add trust classification and allowlist matching.
+  shashanklal (M5): Implement MESSAGE_CREATE parsing.
+  shashanklal (M6): Implement outgoing REST message mapping.
+  shashanklal (M7): Add trust classification and allowlist matching.
 
 Day 4:
-  M10: Add regex mention scanner and rate limit handlers.
-  M11: Validate the live REST and WebSocket connection with the real bot.
-  M1: Begin merging features into the main branch.
+  shashanklal (M10): Add regex mention scanner and rate limit handlers.
+  jssunil (M11): Validate the live REST and WebSocket connection with the real bot.
+  jssunil (M1): Begin merging features into the main branch.
 
 Day 5:
-  M9: Execute ruff and mypy checking, fixing styling discrepancies.
-  M10: Run the local test suite (test_discord.py) to ensure 7/7 tests pass.
-  M1: Review code, write PR summary, and open the Pull Request.
+  jssunil (M9): Execute ruff and mypy checking, fixing styling discrepancies.
+  shashanklal (M10): Run the local test suite (test_discord.py) to ensure 7/7 tests pass.
+  jssunil (M1): Review code, write PR summary, and open the Pull Request.
 
 Day 6–7:
   All: Address reviewer comments, create demo video showing the bot in action, and finalize the merge.
