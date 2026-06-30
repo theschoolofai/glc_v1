@@ -24,39 +24,43 @@ Both are accessible for testing and both are free to start. The main practical d
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Meta Cloud API Setup](#meta-cloud-api)
-3. [Twilio Setup](#twilio)
+1. [Getting Started](#getting-started)
+2. [Meta Cloud API Setup](#meta-cloud-api-setup)
+3. [Twilio Setup](#twilio-setup)
 4. [Provider Routing](#provider-routing)
-5. [Troubleshooting](#troubleshooting)
-6. [Project Structure](#project-structure)
+5. [Known Limitations](#known-limitations)
+6. [Troubleshooting](#troubleshooting)
+7. [Project Structure](#project-structure)
 
 ---
 
-## Prerequisites
+## Getting Started
 
-Enable the WhatsApp channel in `glc/channels.yaml` by setting `whatsapp: {enabled: true}`. By default it is disabled.
+Complete the following three steps before you start:
 
-Create a `.env` file at the project root (it is already gitignored). Fill in the variables for the provider(s) you are setting up.
+1. **Enable the WhatsApp channel** — set `whatsapp: {enabled: true}` in `glc/channels.yaml`. By default it is disabled.
 
-Below are the different variables used as part of this setup. You will understand how to fill in each of these as you go through the setup instructions — the table is just to give you an overview of what is required upfront.
+2. **Set environment variables** — create a `.env` file at the project root (it is already gitignored). Fill in the variables for the provider(s) you are setting up. You will understand how to fill in each of these as you go through the setup instructions — the table below is just to give you an overview of what is required upfront.
 
-| Variable | Provider | What it is |
-|---|---|---|
-| `WHATSAPP_PHONE_NUMBER_ID` | Meta | Numeric Phone Number ID from the Meta "Step 1. Try it out" panel |
-| `WHATSAPP_TOKEN` | Meta | Graph API access token — 24-hour (from the panel) or 60-day (via Graph API Explorer) |
-| `WHATSAPP_APP_SECRET` | Meta | App secret from App Settings → Basic → App secret → Show |
-| `WHATSAPP_VERIFY_TOKEN` | Meta | Any string you choose — must match exactly what you enter in the Meta console webhook config |
-| `WHATSAPP_WABA_ID` | Meta | WhatsApp Business Account ID shown on the "Step 1. Try it out" panel |
-| `WHATSAPP_APP_ID` | Meta | Numeric App ID from App Settings → Basic |
-| `TWILIO_ACCOUNT_SID` | Twilio | Account SID from Twilio Console home page |
-| `TWILIO_AUTH_TOKEN` | Twilio | Auth Token from Twilio Console home page — treat as a password |
-| `TWILIO_SANDBOX_NUMBER` | Twilio | Sandbox number, e.g. `+14155238886` |
-| `TWILIO_WEBHOOK_URL` | Twilio | Exact public URL configured in Twilio Sandbox Settings — must match character-for-character |
+   | Variable | Provider | What it is |
+   |---|---|---|
+   | `WHATSAPP_PHONE_NUMBER_ID` | Meta | Numeric Phone Number ID from the Meta "Step 1. Try it out" panel |
+   | `WHATSAPP_TOKEN` | Meta | Graph API access token — 24-hour (from the panel) or 60-day (via Graph API Explorer) |
+   | `WHATSAPP_APP_SECRET` | Meta | App secret from App Settings → Basic → App secret → Show |
+   | `WHATSAPP_VERIFY_TOKEN` | Meta | Any string you choose — must match exactly what you enter in the Meta console webhook config |
+   | `WHATSAPP_WABA_ID` | Meta | WhatsApp Business Account ID shown on the "Step 1. Try it out" panel |
+   | `WHATSAPP_APP_ID` | Meta | Numeric App ID from App Settings → Basic |
+   | `TWILIO_ACCOUNT_SID` | Twilio | Account SID from Twilio Console home page |
+   | `TWILIO_AUTH_TOKEN` | Twilio | Auth Token from Twilio Console home page — treat as a password |
+   | `TWILIO_WHATSAPP_FROM` | Twilio | Sandbox number with `whatsapp:` prefix, e.g. `whatsapp:+14155238886` |
+   | `TWILIO_WEBHOOK_URL` | Twilio | Exact public URL configured in Twilio Sandbox Settings — must match character-for-character |
+
+3. **Install the `twilio` package** — `adapter.py` imports from the `twilio` package, which is not yet declared in `pyproject.toml`. Until a separate PR adds it, a clean `uv sync` will not pull it in.
+   > **TODO:** install it manually with `uv pip install twilio` if you hit an import error on the Twilio path.
 
 ---
 
-## Meta Cloud API
+## Meta Cloud API Setup
 
 Meta Cloud API is the direct integration with WhatsApp via Meta's developer platform. Messages go directly between your server and Meta — no third-party relay.
 
@@ -147,7 +151,7 @@ The 24-hour token from the panel must be regenerated before every session. To av
 1. Open [Graph API Explorer](https://developers.facebook.com/tools/explorer/).
 2. Select your app from the top-right dropdown.
 3. Click **Generate Access Token** → select the `whatsapp_business_messaging` and `whatsapp_business_management` permissions.
-4. Exchange the short-lived token for a long-lived one using the token debugger tool.
+4. Exchange the short-lived token for a long-lived one using the Graph API Explorer (see [US1_meta_wiring_setup.md](help_docs/US1_meta_wiring/US1_meta_wiring_setup.md) step 10 for the full exchange procedure).
 5. Copy the resulting token → `WHATSAPP_TOKEN`.
 
 ### Step 10 — Collect your App ID
@@ -179,7 +183,7 @@ Note the `https://` URL that ngrok prints (e.g. `https://abc123.ngrok-free.app`)
 1. In the Meta App Dashboard → **WhatsApp → Configuration → Webhook → Edit**.
 2. Set **Callback URL** to your tunnel URL (e.g. `https://abc123.ngrok-free.app`).
 3. Set **Verify Token** to the same value as `WHATSAPP_VERIFY_TOKEN` in your `.env`.
-4. Click **Verify and Save**. Meta will make a GET request to your server — the gateway responds and verification completes automatically.
+4. Click **Verify and Save**. Meta sends a one-time GET request containing a `hub.challenge` value — the gateway echoes it back automatically and verification completes.
 5. Under **Webhook fields**, click **Subscribe** next to the **messages** field. Without this subscription, Meta will not forward inbound WhatsApp messages to your server.
 
 ### Step 13 — Pair your phone number
@@ -205,11 +209,11 @@ The response will contain a 6-digit pairing code. **Send that code as a WhatsApp
 
 With the gateway running and your phone paired, send any message from your WhatsApp to the test number. You should receive a reply from the agent within a few seconds.
 
-> **24-hour window reminder:** Meta's re-engagement window means that if more than 24 hours pass without a message from your phone to the test number, the window closes. To reopen it, send any message to the test number first. The gateway automatically falls back to Twilio for outbound messages if Meta returns error `131030`.
+> **24-hour window reminder:** Meta's re-engagement window means that if more than 24 hours pass without a message from your phone to the test number, the window closes. To reopen it, send any message to the test number first — the gateway does not automatically fall back to Twilio for this case (error `131047`). The automatic Twilio fallback only triggers on a separate error, `131030` (recipient not in Meta's allowed list). See [Provider Routing](#provider-routing) for details.
 
 ---
 
-## Twilio
+## Twilio Setup
 
 Twilio acts as a relay — inbound WhatsApp messages arrive at Twilio's servers first, then Twilio forwards them to your webhook. You use a shared sandbox number rather than a dedicated registered number.
 
@@ -235,7 +239,7 @@ In the Twilio Console, go to **Messaging → Try it out → Send a WhatsApp mess
 
 ![Activate sandbox](assets/screenshots/twilio_03_activate_sandbox.png)
 
-Take note of the sandbox number shown on this page (e.g. `+14155238886`) and copy it → `TWILIO_SANDBOX_NUMBER`.
+Take note of the sandbox number shown on this page (e.g. `+14155238886`) and copy it → `TWILIO_WHATSAPP_FROM` (with the `whatsapp:` prefix, e.g. `whatsapp:+14155238886`).
 
 ### Step 4 — Join the sandbox from your personal phone
 
@@ -305,11 +309,30 @@ When the agent sends a reply, the gateway picks the provider as follows:
 
 1. **Cached provider** — if your number sent an inbound message recently, the same provider is used for the reply. This is the common case and requires no extra API calls.
 2. **Meta first** — if there is no cached provider, the gateway tries Meta. On success, it caches `meta` for your number.
-3. **Automatic Twilio fallback** — if Meta returns error `131030` (recipient not in the allowed list or outside the 24-hour messaging window), the gateway automatically retries via Twilio and caches `twilio` for your number going forward.
+3. **Automatic Twilio fallback** — if Meta returns error `131030` (recipient phone number not in Meta's allowed list — a test account restriction only), the gateway automatically retries via Twilio and caches `twilio` for your number going forward.
+
+Error `131047` (24-hour re-engagement window closed) is **not** a Twilio-fallback case — the gateway returns the error as-is, and you must re-initiate the conversation from your phone first (see [Troubleshooting](#troubleshooting)).
 
 Replies are only sent to paired recipients (`owner_paired` or `user_paired`). Messages from unpaired numbers are silently dropped before any provider send is attempted.
 
 The provider cache is in-memory only and resets when the gateway restarts.
+
+---
+
+## Known Limitations
+
+**Webhook verification mechanism:** When you click "Verify and Save" in the Meta console (Step 12), Meta sends a one-time GET request containing a `hub.challenge` value. The gateway must echo that value back exactly for verification to succeed — this is the mechanism behind "verification completes automatically."
+
+**No group chat or @mention support:** Neither Meta's Cloud API nor Twilio's WhatsApp integration supports group chats or @mentions the way Slack or Discord do. The `is_public_channel` and `was_mentioned` fields in the shared allowlist contract exist for other channels — for WhatsApp every conversation is effectively a DM, so these are always treated as direct messages.
+
+**Test account vs. production:**
+
+| | Test / Sandbox (this guide) | Production |
+|---|---|---|
+| Meta | Shared test number from the Meta dashboard — only phone numbers explicitly added there can receive messages. The 24-hour window must be reopened manually by sending the template message first. The access token expires in 24 hours unless exchanged for a 60-day token (Step 9). | Dedicated, verified WABA number. Any number can be messaged within Meta's policies. The same 24-hour window rules apply, but token management is handled via system users. |
+| Twilio | Shared sandbox number (`+14155238886`) — every recipient must opt in with a join code that expires every 3 days (error `63016`). | Dedicated Twilio number. No opt-in / join code required. |
+
+**Setup time:** Budget 30–60 minutes per provider for a first-time setup. Between app creation, credential collection, tunnel setup, webhook registration, and phone pairing, there are several dashboard steps with no shortcuts.
 
 ---
 
@@ -345,7 +368,7 @@ glc/channels/catalogue/whatsapp/
 │       ├── twilio_02_account_credentials.png
 │       └── ...
 └── tests/
-    └── test_twilio_path.py ← Twilio-specific test suite
+    └── test_twilio_path.py
 ```
 
 The adapter depends on these shared modules (outside this folder):
