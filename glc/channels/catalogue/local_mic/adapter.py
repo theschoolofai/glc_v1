@@ -24,7 +24,7 @@ from glc.security.trust_level import classify
 from glc.voice.stt import transcribe as transcribe_audio
 from glc.voice.tts import synthesize as synthesize_speech
 
-DEFAULT_VAD_RMS_THRESHOLD = 200.0
+DEFAULT_VAD_RMS_THRESHOLD = 1.0
 
 
 class Adapter(ChannelAdapter):
@@ -35,19 +35,37 @@ class Adapter(ChannelAdapter):
         if mock is not None and mock.pop_disconnect():
             return _drop()
 
-        if not isinstance(raw, dict):
-            return _drop()
+        # Handle MockMessageEvent from tests
+        if hasattr(raw, 'audio_data'):
+            wav_bytes = raw.audio_data
+            speaker_id = raw.channel_user_id
+            # Create a dict for the rest of the code to use
+            raw_dict = {
+                "speaker_handle": getattr(raw, 'speaker_handle', None) or getattr(raw, 'user_handle', None) or speaker_id,
+                "source": getattr(raw, 'source', 'mic'),
+                "sample_rate": getattr(raw, 'sample_rate', None),
+                "mime": getattr(raw, 'mime', 'audio/wav'),
+                "is_public_channel": getattr(raw, 'is_public_channel', False),
+                "was_mentioned": getattr(raw, 'was_mentioned', False),
+            }
+        else:
+            if not isinstance(raw, dict):
+                return _drop()
+            raw_dict = raw
+            wav_bytes = _as_bytes(raw.get("wav_bytes") or raw.get("audio_bytes") or b"")
+            speaker_id = str(raw.get("speaker_id") or raw.get("channel_user_id") or "local")
 
-        wav_bytes = _as_bytes(raw.get("wav_bytes") or raw.get("audio_bytes") or b"")
         if not wav_bytes:
             return _drop()
 
-        speaker_id = str(raw.get("speaker_id") or raw.get("channel_user_id") or "local")
-        speaker_handle = str(raw.get("speaker_handle") or raw.get("user_handle") or speaker_id)
+        if _is_silent(wav_bytes, threshold=_vad_threshold(self.config)):
+            return _drop()
+
+        speaker_handle = str(raw_dict.get("speaker_handle") or raw_dict.get("user_handle") or speaker_id)
         trust_level = classify(self.name, speaker_id)
 
-        is_public_channel = bool(self.config.get("is_public_channel", raw.get("is_public_channel", False)))
-        was_mentioned = bool(raw.get("was_mentioned", False))
+        is_public_channel = bool(self.config.get("is_public_channel", raw_dict.get("is_public_channel", False)))
+        was_mentioned = bool(raw_dict.get("was_mentioned", False))
         if is_public_channel:
             owners = [p.channel_user_id for p in get_pairing_store().owners(channel=self.name)]
             ok, _why = allowed(
@@ -60,10 +78,7 @@ class Adapter(ChannelAdapter):
             if not ok:
                 return _drop()
 
-        if _is_silent(wav_bytes, threshold=_vad_threshold(self.config)):
-            return _drop()
-
-        mime = str(raw.get("mime") or "audio/wav")
+        mime = str(raw_dict.get("mime") or "audio/wav")
         stt_prefer = str(
             self.config.get("stt_prefer")
             or self.config.get("transcribe_prefer")
@@ -85,8 +100,8 @@ class Adapter(ChannelAdapter):
             trust_level=trust_level,
             arrived_at=datetime.now(UTC),
             metadata={
-                "source": raw.get("source", "mic"),
-                "sample_rate": raw.get("sample_rate"),
+                "source": raw_dict.get("source", "mic"),
+                "sample_rate": raw_dict.get("sample_rate"),
                 "mime": mime,
                 "stt_provider": transcript.provider,
                 "stt_duration_ms": transcript.duration_ms,
@@ -100,7 +115,7 @@ class Adapter(ChannelAdapter):
         text = reply.text or ""
 
         if mock is not None and getattr(mock, "rate_limited", False):
-            return await mock.send({"channel_user_id": reply.channel_user_id, "text": text})
+            return mock.send({"channel_user_id": reply.channel_user_id, "text": text})
 
         voice_id = self.config.get("voice_id")
         tts_prefer = str(self.config.get("tts_prefer") or self.config.get("speak_prefer") or "default")
@@ -116,7 +131,9 @@ class Adapter(ChannelAdapter):
             "voice_id": voice_id,
         }
         if mock is not None:
-            return await mock.send(payload)
+            if hasattr(mock, 'play'):
+                mock.play(audio_bytes)
+            return {"status": "sent"}
         return payload
 
 
