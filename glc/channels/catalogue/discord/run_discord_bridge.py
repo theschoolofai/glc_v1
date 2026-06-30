@@ -105,7 +105,8 @@ async def run_bridge():
 
     # 1. Retrieve the GLC local install token to authorize with the GLC gateway
     install_token = get_or_create_install_token()
-    glc_ws_url = f"ws://localhost:8111/v1/channels/discord?token={install_token}"
+    glc_port = os.environ.get("GLC_PORT", "8111")
+    glc_ws_url = f"ws://localhost:{glc_port}/v1/channels/discord?token={install_token}"
 
     # 2. Instantiate client and adapter
     client = RealDiscordClient(token=bot_token)
