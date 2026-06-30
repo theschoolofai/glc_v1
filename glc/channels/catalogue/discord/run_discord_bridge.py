@@ -22,7 +22,7 @@ from glc.channels.envelope import ChannelReply
 from glc.config import get_or_create_install_token
 
 # Load environment variables from .env at repository root
-load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent.parent.parent.parent / ".env")
 
 
 
