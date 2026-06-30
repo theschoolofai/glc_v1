@@ -10,14 +10,20 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any
 
 import httpx
 import websockets
+from dotenv import load_dotenv
 
 from glc.channels.catalogue.discord.adapter import Adapter
 from glc.channels.envelope import ChannelReply
 from glc.config import get_or_create_install_token
+
+# Load environment variables from .env at repository root
+load_dotenv(Path(__file__).parent.parent.parent.parent / ".env")
+
 
 
 class RealDiscordClient:
