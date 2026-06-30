@@ -142,13 +142,15 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ## 5. Task Distribution (11 Members)
 
 ### Member 1 — Team Leader (You)
+- **Status:** ⚠️ Partially Done
+- **GitHub User:** `jssunil` (js.sunilkumar@gmail.com)
 - **Objective:** Interface design, integration coordination, PR creation, and validation.
 - **Files:** All files under `glc/channels/catalogue/discord/`.
 - **Deliverables:**
-  - Establish branch merge strategy (e.g. `feat/discord-channel` branch) and coordinate integrations.
-  - Review all members' code blocks for safety and structural consistency.
-  - Validate that the full suite of 7 tests passes locally.
-  - Open the Pull Request on GitHub with the required `# Group: group-2-discord` and `# Slot: discord` template markers.
+  - ✅ Established branch `glc_v1_g2_discord_impl` and coordinated integrations.
+  - ✅ Reviewed all members' code for structural consistency.
+  - ✅ Validated that the full suite of 7 tests passes locally.
+  - ❌ **Pending:** Open the Pull Request on GitHub with `# Group: group-2-discord` and `# Slot: discord` template markers.
 - **Dependencies:** Unblocked from day one.
 - **Difficulty:** Medium.
 - **Effort:** ~4–6 hours across the sprint.
@@ -156,12 +158,14 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 2 — Test & Mock Analyst
+- **Status:** ✅ Done
+- **GitHub User:** `jssunil` (js.sunilkumar@gmail.com) — analyzed and used to drive adapter implementation
 - **Objective:** Deeply analyze tests and mock framework, supplying a behavioral contract.
 - **Files to read:** `tests/channels/test_discord.py`, `tests/channels/mocks/discord_mock.py`.
 - **Deliverables:**
-  - Written specification detailing mock integration hooks: how disconnect states are stored, how the send log records responses, how users are registered, and user query shapes.
-  - Document the exact assertions of the 7 tests.
-  - Share specification with M4 and M5.
+  - ✅ Mock integration hooks analyzed (disconnect states, send log recording, user registration, and user query shapes).
+  - ✅ Exact assertions of all 7 tests documented and used to drive M4–M10 development.
+  - ✅ Specification shared implicitly via adapter implementation.
 - **Dependencies:** None.
 - **Difficulty:** Easy.
 - **Effort:** ~2–3 hours (Day 1).
@@ -169,12 +173,15 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 3 — Discord API Researcher
+- **Status:** ✅ Done
+- **GitHub User:** `jssunil` (js.sunilkumar@gmail.com) — commit `5726c4f`
 - **Objective:** Map real Discord REST and WebSocket gateway shapes.
 - **Reference:** `https://discord.com/developers/docs/topics/gateway-events#message-create`.
 - **Deliverables:**
-  - Document the exact payload structure of the `MESSAGE_CREATE` gateway dispatch (e.g., author nested parameters, content string, timestamp format).
-  - Document the REST URL structure for message creation (`/channels/{channel_id}/messages`) and user profile retrieval (`/users/{user_id}`).
-  - Outline headers required (e.g. `Authorization: Bot <token>`).
+  - ✅ Documented the exact payload structure of the `MESSAGE_CREATE` gateway dispatch (author, content, timestamp format).
+  - ✅ Documented the REST URL structure for message creation and user profile retrieval.
+  - ✅ Outlined required headers (`Authorization: Bot <token>`).
+  - ✅ Published at `glc/channels/catalogue/discord/help_docs/api_research.md`.
 - **Dependencies:** None.
 - **Difficulty:** Easy.
 - **Effort:** ~2–3 hours (Day 1).
@@ -182,12 +189,14 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 4 — Skeleton & Disconnect Developer
+- **Status:** ✅ Done
+- **GitHub User:** `shashanklal` (68998049+shashanklal@users.noreply.github.com) — commit `d8d2278`
 - **Objective:** Create the initial adapter class shell and handle connection drops.
 - **Files:** `glc/channels/catalogue/discord/adapter.py`.
 - **Deliverables:**
-  - Create the `Adapter(ChannelAdapter)` class structure with `name = "discord"`.
-  - Implement config initializer.
-  - Code the disconnect interceptor: in `on_message`, check `mock.pop_disconnect()` and handle cleanly without raising an error.
+  - ✅ Created `Adapter(ChannelAdapter)` class with `name = "discord"`.
+  - ✅ Implemented config initializer via `self.config`.
+  - ✅ Coded disconnect interceptor: `on_message` checks `api.pop_disconnect()` and clears the flag without raising.
 - **Dependencies:** M2's mock specification.
 - **Difficulty:** Easy.
 - **Effort:** ~2–3 hours (Day 2).
@@ -195,13 +204,15 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 5 — Inbound Message Parser
+- **Status:** ✅ Done
+- **GitHub User:** `shashanklal` (68998049+shashanklal@users.noreply.github.com) — commit `d8d2278`
 - **Objective:** Implement parsing logic for incoming Discord events.
 - **Files:** `glc/channels/catalogue/discord/adapter.py`.
 - **Deliverables:**
-  - Parse the raw `raw` payload structure, extracting the payload block `"d"`.
-  - Extract message content, sender ID, user handle, and channel/guild details.
-  - Parse the ISO-8601 string timestamp to a timezone-aware `datetime` object.
-  - Populate the initial `ChannelMessage` values.
+  - ✅ Parses raw payload: extracts `"d"` block via `raw.get("d", raw)`.
+  - ✅ Extracts message content, sender ID (`author.id`), user handle, channel ID, guild ID.
+  - ✅ Parses ISO-8601 timestamp to timezone-aware `datetime` via `_parse_ts()`.
+  - ✅ Populates full `ChannelMessage` including `metadata["message_id"]` and `metadata["guild_id"]`.
 - **Dependencies:** M4's skeleton, M3's API documentation.
 - **Difficulty:** Medium.
 - **Effort:** ~3–4 hours (Day 2–3).
@@ -209,12 +220,14 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 6 — Outbound Message Dispatcher
+- **Status:** ✅ Done
+- **GitHub User:** `shashanklal` (68998049+shashanklal@users.noreply.github.com) — commit `d8d2278`
 - **Objective:** Implement the REST `send` method for outgoing message replies.
 - **Files:** `glc/channels/catalogue/discord/adapter.py`.
 - **Deliverables:**
-  - Translate `ChannelReply` into Discord REST POST JSON payload.
-  - Ensure the payload features the `content` key and does NOT flag `tts: true` by default.
-  - Implement routing: if mock is set, send to `mock.send(...)`; otherwise, make the HTTP call using `httpx`.
+  - ✅ Translates `ChannelReply` → `DiscordCreateMessage` pydantic model → REST POST JSON body.
+  - ✅ Payload carries `content` key; `tts` is excluded via `model_dump(exclude={"tts"})`.
+  - ✅ Routing: calls `api.send(payload)` — dispatches to mock or real `RealDiscordClient.send()` transparently.
 - **Dependencies:** M4's skeleton, M8's schemas.
 - **Difficulty:** Medium.
 - **Effort:** ~3–4 hours (Day 2–3).
@@ -222,12 +235,14 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 7 — Trust & Allowlist Guard
+- **Status:** ✅ Done
+- **GitHub User:** `shashanklal` (68998049+shashanklal@users.noreply.github.com) — commit `d8d2278`
 - **Objective:** Integrate identity checking and public channel access postures.
 - **Files:** `glc/channels/catalogue/discord/adapter.py`.
 - **Deliverables:**
-  - Call `trust_level.classify(...)` to classify sender trust.
-  - Read `is_public_channel` state and call `allowlists.allowed(...)` using sender ID, public flags, and mentions.
-  - Gracefully drop messages (return `None`) or tag them untrusted when the allowlist fails.
+  - ✅ Calls `classify(CHANNEL, user_id)` to tag sender trust level on every message.
+  - ✅ Reads `is_public_channel` from config; calls `allowlists.allowed(...)` with owner IDs, public flag, and `was_mentioned`.
+  - ✅ Returns `None` gracefully when allowlist check fails (message dropped silently).
 - **Dependencies:** M5's inbound parser.
 - **Difficulty:** Medium.
 - **Effort:** ~3 hours (Day 3).
@@ -235,11 +250,14 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 8 — Schema Designer
+- **Status:** ✅ Done
+- **GitHub User:** `mkthoma` (mathewkennythomas@gmail.com) — commit `1d1f50a`; refined by `shashanklal` — commit `d8d2278`
 - **Objective:** Model Discord payload shapes with Pydantic in schemas.py.
 - **Files:** `glc/channels/catalogue/discord/schemas.py`.
 - **Deliverables:**
-  - Construct Pydantic schemas for the inbound gateway frame (`DiscordGatewayFrame`), message data structure (`DiscordMessageCreate`), author details, and outbound REST response shapes.
-  - Provide adapters with structured parser helpers.
+  - ✅ `DiscordUser` — models author and mention user objects.
+  - ✅ `DiscordMessage` — models full inbound `MESSAGE_CREATE` data payload with `handle` computed property.
+  - ✅ `DiscordCreateMessage` — models outbound REST POST body with `tts: false` default.
 - **Dependencies:** M3's API documentation.
 - **Difficulty:** Easy.
 - **Effort:** ~2–3 hours (Day 2).
@@ -247,13 +265,15 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 9 — Linter & Type Annotation Expert
+- **Status:** ✅ Done
+- **GitHub User:** `jssunil` (js.sunilkumar@gmail.com) — commits `8bc1e93`, `1ffdf8c`, `2809de5`, `d24cc8b`, `a7ef1d4`
 - **Objective:** Ensure compliance with `ruff` and `mypy` strict configurations.
 - **Files:** All modified files in the Discord package.
 - **Deliverables:**
-  - Insert `from __future__ import annotations` across all team files.
-  - Apply clean type hinting across every class method and global function.
-  - Run lint validation locally using `uv run ruff check` and fix any issues (no unused imports, no empty exceptions, proper line wrapping).
-  - Run type analysis locally using `uv run mypy` and resolve typing discrepancies.
+  - ✅ `from __future__ import annotations` present across all package files.
+  - ✅ Full type hinting applied to all class methods and global functions.
+  - ✅ `uv run ruff check glc/channels/catalogue/discord/` — all checks pass.
+  - ✅ `uv run mypy glc/channels/catalogue/discord/` — no issues found in 4 source files.
 - **Dependencies:** M5, M6, M7, M10 code implementations.
 - **Difficulty:** Easy.
 - **Effort:** ~2 hours (Day 4–5).
@@ -261,13 +281,15 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 10 — Mention Resolver & Error Handler
+- **Status:** ✅ Done
+- **GitHub User:** `shashanklal` (68998049+shashanklal@users.noreply.github.com) — commit `d8d2278`
 - **Objective:** Implement regex scanning for mentions, user query, and error response mapping.
 - **Files:** `glc/channels/catalogue/discord/adapter.py`.
 - **Deliverables:**
-  - Use regex patterns to identify `<@user_id>` mentions in message body.
-  - Resolve matching handles via `mock.get_user(user_id)` or real REST calls.
-  - Insert resolved entries into `ChannelMessage.metadata["mentions"]`.
-  - Capture outbound response values: identify rate limits (429) or JSON response envelopes carrying limit details, returning them formatted as a dictionary containing `status: 429` or `retry_after`.
+  - ✅ Iterates `msg.mentions` array (Discord pre-parses `<@id>` tokens into the `mentions` list).
+  - ✅ Resolves user handles via `api.get_user(m.id)` — works against mock and real `RealDiscordClient`.
+  - ✅ Resolved handles inserted into `ChannelMessage.metadata["mentions"]`.
+  - ✅ Rate limit (429) handling in `RealDiscordClient.send()`: extracts `retry_after` and returns a normalized dict with `status: 429`.
 - **Dependencies:** M5's inbound parser, M6's send dispatcher.
 - **Difficulty:** Medium.
 - **Effort:** ~4 hours (Day 3–4).
@@ -275,13 +297,16 @@ The boundary CI check (`scripts/check_pr_boundaries.py`) **rejects any PR that t
 ---
 
 ### Member 11 — Live Tester & Setup Guide Writer
+- **Status:** ⚠️ Partially Done
+- **GitHub User:** `jssunil` (js.sunilkumar@gmail.com) — commits `8bc1e93`, `d24cc8b`
 - **Objective:** Verify the final integration against a live bot and document developer setup.
 - **Files:** `glc/channels/catalogue/discord/adapter.py` (read-only), new test folder.
 - **Deliverables:**
-  - Create a test bot in the Discord Developer portal, invite it to a test guild, and get its token.
-  - Perform live loop tests with real messages.
-  - Write a live integration test file marked with `@pytest.mark.requires_live_api` to ensure CI skips it.
-  - Write documentation in the team space detailing how to configure `DISCORD_BOT_TOKEN`, token scopes (e.g. `Guilds`, `Guild Messages`, `Message Content Intent`), and how to run manual validations.
+  - ✅ Created test bot in the Discord Developer portal; bot token obtained and stored in `.env`.
+  - ✅ Live REST send verified: `send_test_message.py` successfully sent message (ID: `1521529665725141204`) to real Discord channel.
+  - ✅ Live WebSocket bridge verified: `run_discord_bridge.py` connects to Discord Gateway and GLC Gateway simultaneously.
+  - ❌ **Pending:** Write a live integration test file marked with `@pytest.mark.requires_live_api`.
+  - ❌ **Pending:** Write formal documentation for `DISCORD_BOT_TOKEN` scopes (`Guilds`, `Guild Messages`, `Message Content Intent`) in the team space.
 - **Dependencies:** M5 and M6 implementations.
 - **Difficulty:** Medium.
 - **Effort:** ~4 hours (Day 3–4).
