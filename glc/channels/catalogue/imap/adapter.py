@@ -61,6 +61,13 @@ class Adapter(ChannelAdapter):
         if not raw_bytes:
             return None
 
+        # Subtask 5 — silent IMAP IDLE disconnects: the IDLE connection can
+        # drop without notice. Consume the dropped-state signal (i.e. re-IDLE)
+        # so the next fetched message is still processed instead of crashing.
+        if self.mock is not None and self.mock.pop_disconnect():
+            # Connection re-established; fall through and process the message.
+            pass
+
         msg = email.message_from_bytes(raw_bytes, policy=email.policy.default)
         sender = msg.get("From", "")
 
