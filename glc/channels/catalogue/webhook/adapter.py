@@ -123,7 +123,4 @@ class Adapter(ChannelAdapter):
             try:
                 return resp.json()
             except Exception:
-                return {
-                    "status": resp.status_code,
-                    "text": resp.text
-                }
+                return {"status": resp.status_code, "text": resp.text}
