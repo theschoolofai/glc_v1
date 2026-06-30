@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import inspect
 import logging
 import os
 from datetime import UTC, datetime
@@ -72,6 +73,24 @@ class Adapter(ChannelAdapter):
         # is registered on its `start` frame and evicted on `stop`.
         self._stream_callers: dict[str, dict[str, str]] = {}
 
+        # Optional buffered transcription (opt-in; default off keeps the
+        # per-frame behaviour the official tests assert). When enabled, media
+        # frames accumulate per stream and are transcribed once as a whole
+        # utterance — flushed on the `stop` frame, or earlier if the buffer
+        # grows past `max_buffer_bytes` (a runaway-stream safety cap). See
+        # README Limitation 2.
+        self._buffer_audio: bool = bool(self.config.get("buffer_audio", False))
+        self._stream_buffers: dict[str, bytearray] = {}
+        # 8 kHz mu-law is 8000 bytes/sec; default cap ~30 s of audio.
+        self._max_buffer_bytes: int = int(self.config.get("max_buffer_bytes", 8000 * 30))
+
+        # Optional observability hook (default None = no-op). When set to a
+        # callable, the adapter emits a structured event dict at each inbound /
+        # outbound step — useful for live monitoring (e.g. a dashboard) and for
+        # asserting the flow in tests. Sync or async callables both work, and a
+        # hook that raises is swallowed so monitoring can never break a call.
+        self._event_hook = self.config.get("event_hook")
+
     async def on_message(self, raw: Any) -> ChannelMessage:
         mock = self.config.get("mock")
 
@@ -82,15 +101,34 @@ class Adapter(ChannelAdapter):
 
         # Inbound shapes: a Media Streams frame (start/media/stop) or a call
         # webhook. Route by the frame's `event`; a webhook has no `event`.
-        if isinstance(raw, dict):
-            event = raw.get("event")
+        if isinstance(raw, dict) and raw.get("event") in ("media", "start", "stop"):
+            event = raw["event"]
             if event == "media":
-                return await self._handle_media_frame(raw, mock)
-            if event == "start":
-                return self._handle_stream_start(raw)
-            if event == "stop":
-                return self._handle_stream_stop(raw)
-        return self._handle_call_webhook(raw, reconnect=reconnect)
+                msg = await self._handle_media_frame(raw, mock)
+            elif event == "start":
+                msg = self._handle_stream_start(raw)
+            else:
+                msg = await self._handle_stream_stop(raw, mock)
+        else:
+            msg = self._handle_call_webhook(raw, reconnect=reconnect)
+
+        await self._emit("inbound", envelope=msg.model_dump(mode="json"))
+        return msg
+
+    async def _emit(self, event_type: str, **fields: Any) -> None:
+        """Send a structured event to the optional observability hook. No-op when
+        no hook is configured. A hook that raises is swallowed — monitoring must
+        never break call handling. Accepts sync or async hooks."""
+        hook = self._event_hook
+        if hook is None:
+            return
+        payload = {"event": event_type, "channel": self.name, **fields}
+        try:
+            result = hook(payload)
+            if inspect.isawaitable(result):
+                await result
+        except Exception:  # pragma: no cover - defensive: never break a live call
+            logger.debug("twilio_voice: event_hook raised", exc_info=True)
 
     def authenticate_webhook(self, raw: dict[str, Any], *, url: str, signature: str | None) -> bool:
         """Verify an inbound call webhook actually came from Twilio.
@@ -131,8 +169,15 @@ class Adapter(ChannelAdapter):
         mock = self.config.get("mock")
         if mock is not None:
             # The mock returns a 429 dict when rate-limited; pass it through.
-            return await mock.send(body)
-        return body
+            result = await mock.send(body)
+        else:
+            result = body
+        await self._emit(
+            "outbound",
+            reply=reply.model_dump(mode="json"),
+            status=result.get("status") if isinstance(result, dict) else None,
+        )
+        return result
 
     # -- inbound helpers ----------------------------------------------------
 
@@ -218,13 +263,23 @@ class Adapter(ChannelAdapter):
             metadata={"stream_sid": frame.start.streamSid, "call_stage": "answered"},
         )
 
-    def _handle_stream_stop(self, raw: dict[str, Any]) -> ChannelMessage:
+    async def _handle_stream_stop(self, raw: dict[str, Any], mock: Any = None) -> ChannelMessage:
         # Evict the stream's caller so a long-lived process doesn't leak one
         # dict entry per call forever.
         try:
             frame = TwilioStreamStopFrame.model_validate(raw)
         except ValidationError:
             return self._malformed_frame_message("stop")
+
+        # Buffered mode: the stop frame is the natural flush point — transcribe
+        # the whole accumulated utterance once, then evict. (Default mode never
+        # buffers, so this branch is skipped and behaviour is unchanged.)
+        if self._buffer_audio and self._stream_buffers.get(frame.streamSid):
+            msg = await self._flush_buffer(frame.streamSid, mock, stage="completed")
+            self._stream_callers.pop(frame.streamSid, None)
+            return msg
+
+        self._stream_buffers.pop(frame.streamSid, None)
         caller = self._stream_callers.pop(frame.streamSid, {})
         caller_id = caller.get("id", "")
         return ChannelMessage(
@@ -235,6 +290,48 @@ class Adapter(ChannelAdapter):
             trust_level=classify(self.name, caller_id),
             arrived_at=datetime.now(UTC),
             metadata={"stream_sid": frame.streamSid, "call_stage": "completed", "lifecycle": True},
+        )
+
+    async def _transcribe_wav(self, wav: bytes, mock: Any) -> tuple[str | None, str | None]:
+        """Transcribe a WAV via the mock (tests) or the STT facade (production).
+        Returns (text, error); on failure text is None and error is the reason."""
+        try:
+            if mock is not None:
+                return mock.transcribe(wav), None
+            result = await stt_transcribe(wav, WAV_MIME)
+            return result.text, None
+        except Exception as exc:  # keep the audio; report the failure
+            return None, str(exc)
+
+    async def _flush_buffer(self, stream_sid: str | None, mock: Any, *, stage: str) -> ChannelMessage:
+        """Convert a stream's buffered mu-law into one WAV, persist it, transcribe
+        it once, and return the resulting ChannelMessage. Clears the buffer."""
+        key = stream_sid or ""
+        buf = self._stream_buffers.pop(key, bytearray())
+        caller = self._stream_callers.get(key, {})
+        caller_id = caller.get("id", "")
+        handle = caller.get("handle") or caller_id
+
+        wav = mulaw_to_wav(bytes(buf))
+        sha = hashlib.sha256(wav).hexdigest()
+        ref = mock.store_artifact(sha, wav) if mock is not None else f"art:{sha}"
+
+        metadata: dict[str, Any] = {"stream_sid": stream_sid, "call_stage": stage, "buffered": True}
+        text, err = await self._transcribe_wav(wav, mock)
+        if err is not None:
+            metadata["transcription_error"] = err
+        elif text == "":
+            metadata["empty_transcript"] = True
+
+        return ChannelMessage(
+            channel=self.name,
+            channel_user_id=caller_id,
+            user_handle=handle or caller_id,
+            text=text,
+            voice_audio_ref=ref,
+            trust_level=classify(self.name, caller_id),
+            arrived_at=datetime.now(UTC),
+            metadata=metadata,
         )
 
     async def _handle_media_frame(self, raw: dict[str, Any], mock: Any) -> ChannelMessage:
@@ -254,12 +351,6 @@ class Adapter(ChannelAdapter):
         except (binascii.Error, ValueError):
             mulaw = b""
             decode_failed = True
-        # Normalise Twilio's headerless 8 kHz mu-law into a self-describing
-        # 16 kHz mono PCM WAV. This is the format the STT facade and the
-        # artifact store both expect; raw mu-law would fail against the real
-        # providers (it passes in tests only because the mock ignores bytes).
-        wav = mulaw_to_wav(mulaw)
-
         # Resolve the caller from the per-stream registry (set on `start`).
         # An unknown stream falls back to an unattributed, untrusted message
         # rather than borrowing another concurrent call's caller.
@@ -267,30 +358,52 @@ class Adapter(ChannelAdapter):
         caller_id = caller.get("id", "")
         handle = caller.get("handle") or caller_id
 
+        # Buffered mode (opt-in): accumulate raw mu-law and defer transcription
+        # to the `stop` flush, so a whole utterance is transcribed at once
+        # instead of every ~20 ms frame. Each frame returns a lightweight
+        # "still buffering" envelope (text=None); the transcript arrives on stop.
+        if self._buffer_audio:
+            buf = self._stream_buffers.setdefault(frame.streamSid or "", bytearray())
+            buf.extend(mulaw)
+            # Runaway-stream safety: flush early if a single utterance gets huge.
+            if len(buf) >= self._max_buffer_bytes:
+                return await self._flush_buffer(frame.streamSid, mock, stage="answered")
+            metadata: dict[str, Any] = {
+                "stream_sid": frame.streamSid,
+                "call_stage": "answered",
+                "buffering": True,
+            }
+            if decode_failed:
+                metadata["malformed_audio"] = True
+            return ChannelMessage(
+                channel=self.name,
+                channel_user_id=caller_id,
+                user_handle=handle or caller_id,
+                text=None,
+                trust_level=classify(self.name, caller_id),
+                arrived_at=datetime.now(UTC),
+                metadata=metadata,
+            )
+
+        # Default mode: convert this frame's mu-law into a 16 kHz mono PCM WAV
+        # (the format the STT facade + artifact store expect) and transcribe it.
+        wav = mulaw_to_wav(mulaw)
+
         # Persist the recording first, so we keep the audio even if the
-        # transcription step fails. We store the decoded WAV (self-contained,
-        # playable) rather than the raw mu-law. The mock backs the artifact
-        # store in tests; in production this handle points at the gateway store.
+        # transcription step fails. The mock backs the artifact store in tests;
+        # in production this handle points at the gateway store.
         sha = hashlib.sha256(wav).hexdigest()
         ref = mock.store_artifact(sha, wav) if mock is not None else f"art:{sha}"
 
-        metadata: dict[str, Any] = {"stream_sid": frame.streamSid, "call_stage": "answered"}
+        metadata = {"stream_sid": frame.streamSid, "call_stage": "answered"}
         if decode_failed:
             metadata["malformed_audio"] = True
-        text: str | None
-        try:
-            if mock is not None:
-                text = mock.transcribe(wav)
-            else:
-                result = await stt_transcribe(wav, WAV_MIME)
-                text = result.text
-        except Exception as exc:  # transcription failed — keep audio, report it
-            text = None
-            metadata["transcription_error"] = str(exc)
-        else:
-            if text == "":
-                # We heard the caller but got no words (silence/noise).
-                metadata["empty_transcript"] = True
+        text, err = await self._transcribe_wav(wav, mock)
+        if err is not None:
+            metadata["transcription_error"] = err
+        elif text == "":
+            # We heard the caller but got no words (silence/noise).
+            metadata["empty_transcript"] = True
 
         return ChannelMessage(
             channel=self.name,
