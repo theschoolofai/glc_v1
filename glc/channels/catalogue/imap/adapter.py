@@ -15,6 +15,7 @@ from typing import Any
 
 from glc.channels.base import ChannelAdapter
 from glc.channels.envelope import ChannelMessage, ChannelReply, Attachment
+from glc.security.trust_level import classify
 
 # Default bot sender address used in outbound SMTP messages.
 _BOT_FROM = "bot@example.com"
@@ -83,12 +84,15 @@ class Adapter(ChannelAdapter):
         # PDF attachment extraction
         attachments = self._parse_pdf_attachments(msg)
 
+        # Determine actual trust level by querying the pairing store
+        trust_level = classify(self.name, sender)
+
         return ChannelMessage(
             channel=self.name,
             channel_user_id=sender,
             user_handle=sender,
             text=text_content,
-            trust_level="owner_paired",  # Placeholder for Subtask 3
+            trust_level=trust_level,
             arrived_at=datetime.now(timezone.utc),
             attachments=attachments,
             thread_id=thread_id,
