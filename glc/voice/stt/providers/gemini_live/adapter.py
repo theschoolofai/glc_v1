@@ -28,14 +28,22 @@ import time
 from typing import Any
 
 from glc.voice.stt.base import STTError, STTProvider, TranscribeResult
-
-# Default Gemini Live model + endpoint. Overridable via ``config``.
-# NOTE: only *Live* models expose `bidiGenerateContent`; the plain
-# `gemini-3.1-flash-lite` is NOT live-capable.
-_DEFAULT_MODEL = "models/gemini-3.1-flash-live-preview"
-_WS_ENDPOINT = (
-    "wss://generativelanguage.googleapis.com/ws/"
-    "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+from glc.voice.stt.providers.gemini_live.schemas import (
+    DEFAULT_LANGUAGE,
+    DEFAULT_MODEL,
+    DEFAULT_RESPONSE_MODALITIES,
+    PCM_MIME_TYPE,
+    WAV_HEADER_BYTES,
+    WS_ENDPOINT,
+    GeminiLiveAudioFrame,
+    GeminiLiveAudioInput,
+    GeminiLiveAudioStreamEndFrame,
+    GeminiLiveGenerationConfig,
+    GeminiLiveRealtimeInput,
+    GeminiLiveSetupFrame,
+    GeminiLiveSetupPayload,
+    GeminiLiveSystemInstruction,
+    GeminiLiveTextPart,
 )
 
 
@@ -62,34 +70,32 @@ class Provider(STTProvider):
         v1beta wire format; the canonical key the tests look for is the
         top-level ``setup`` key, which is preserved.
         """
-        model = self.config.get("model", _DEFAULT_MODEL)
+        model = self.config.get("model", DEFAULT_MODEL)
         # gemini-3.1-flash-live-preview only supports AUDIO responseModalities.
         # TEXT modality is rejected by this model (1007 error).
         # inputAudioTranscription: {} is also rejected by the current API (1007).
         # Strategy: use outputAudioTranscription to get a text transcript of the
         # model's AUDIO reply. A systemInstruction tells the model to repeat
         # the user's words verbatim, so the output transcript == the input STT.
-        modalities = self.config.get("response_modalities", ["AUDIO"])
-        return {
-            "setup": {
-                "model": model,
-                "generationConfig": {"responseModalities": modalities},
-                # Enable text transcription of the model's audio output.
-                "outputAudioTranscription": {},
-                # Instruct the model to act as a transcriber: repeat exactly
-                # what the user says so outputTranscription == the input speech.
-                "systemInstruction": {
-                    "parts": [{
-                        "text": (
+        modalities = self.config.get("response_modalities", DEFAULT_RESPONSE_MODALITIES)
+        payload = GeminiLiveSetupPayload(
+            model=model,
+            generationConfig=GeminiLiveGenerationConfig(responseModalities=modalities),
+            outputAudioTranscription={},
+            systemInstruction=GeminiLiveSystemInstruction(
+                parts=[
+                    GeminiLiveTextPart(
+                        text=(
                             "You are a speech transcription service. "
                             "Repeat back exactly what the user says, "
                             "word for word. Output only the transcription "
                             "with no additional commentary."
                         )
-                    }]
-                },
-            }
-        }
+                    )
+                ]
+            ),
+        )
+        return GeminiLiveSetupFrame(setup=payload).model_dump(by_alias=True)
 
     def _build_audio_frame(self, audio: bytes, mime: str) -> dict[str, Any]:
         """The realtimeInput frame carrying the (base64) audio payload.
@@ -103,16 +109,16 @@ class Provider(STTProvider):
         """
         # Strip WAV container header if present — Gemini Live expects raw PCM.
         # WAV files start with the 4-byte ASCII magic 'RIFF'.
-        _WAV_HEADER_BYTES = 44
         if audio[:4] == b"RIFF":
-            audio = audio[_WAV_HEADER_BYTES:]
-            mime = "audio/pcm;rate=16000"
+            audio = audio[WAV_HEADER_BYTES:]
+            mime = PCM_MIME_TYPE
         encoded = base64.b64encode(audio).decode("ascii")
-        return {
-            "realtimeInput": {
-                "audio": {"mimeType": mime, "data": encoded},
-            }
-        }
+        payload = GeminiLiveAudioFrame(
+            realtimeInput=GeminiLiveRealtimeInput(
+                audio=GeminiLiveAudioInput(mimeType=mime, data=encoded)
+            )
+        )
+        return payload.model_dump(by_alias=True)
 
     # ── mock path (what CI exercises) ──────────────────────────────
     async def _transcribe_via_mock(
@@ -163,7 +169,7 @@ class Provider(STTProvider):
         if not api_key:
             raise STTError("GEMINI_API_KEY is not set", status=None)
 
-        url = f"{_WS_ENDPOINT}?key={api_key}"
+        url = f"{WS_ENDPOINT}?key={api_key}"
         start = time.monotonic()
         transcript: list[str] = []
 
@@ -173,7 +179,13 @@ class Provider(STTProvider):
                 await ws.send(json.dumps(self._build_setup_frame()))
                 # 2. push the audio, then close the input turn
                 await ws.send(json.dumps(self._build_audio_frame(audio, mime)))
-                await ws.send(json.dumps({"realtimeInput": {"audioStreamEnd": True}}))
+                await ws.send(
+                    json.dumps(
+                        GeminiLiveAudioStreamEndFrame(
+                            realtimeInput=GeminiLiveRealtimeInput(audioStreamEnd=True)
+                        ).model_dump(by_alias=True)
+                    )
+                )
                 # 3. drain responses until the turn completes
                 async for raw in ws:
                     data = json.loads(raw)
@@ -211,7 +223,7 @@ class Provider(STTProvider):
         duration_ms = int((time.monotonic() - start) * 1000)
         return TranscribeResult(
             text="".join(transcript),
-            language=self.config.get("language", "en"),
+            language=self.config.get("language", DEFAULT_LANGUAGE),
             duration_ms=duration_ms,
             provider=self.name,
             cost_usd=0.0,
