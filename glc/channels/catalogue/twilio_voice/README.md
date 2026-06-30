@@ -28,13 +28,17 @@ glc/channels/catalogue/twilio_voice/
 └── README.md       This file.
 ```
 
+> **Optional, opt-in features** (default off, so the official tests are
+> unaffected): **buffered transcription** (`buffer_audio`, §10.2) and an
+> **observability hook** (`event_hook`, §6) for live monitoring/dashboards.
+
 | File         | Holds                                                                                     |
 |--------------|-------------------------------------------------------------------------------------------|
 | `adapter.py` | `class Adapter(ChannelAdapter)` — `on_message()` (inbound) and `send()` (outbound).       |
 | `schemas.py` | `TwilioInboundEvent`, `TwilioMediaStreamFrame`, `TwilioStreamStartFrame`, `…StopFrame`.    |
 | `audio.py`   | `mulaw_to_wav()` — decodes Twilio's 8 kHz mu-law into 16 kHz mono PCM WAV for STT.         |
 | `signature.py` | `verify_signature()` — HMAC-SHA1 check that a webhook genuinely came from Twilio.        |
-| `test.py`    | 34 group tests reusing the official contract mock. **Must be run by explicit path** — see §9. |
+| `test.py`    | 42 group tests reusing the official contract mock. **Must be run by explicit path** — see §9. |
 
 It depends on these **shared** modules (owned by the project, not this slot):
 
@@ -177,8 +181,15 @@ events apart from speech.
 - **PII**: full phone numbers are never logged. Logs show `***1234`.
 - **XML injection**: all reply text is escaped before reaching TwiML.
 
+**Observability (`config["event_hook"]`).** Pass a callable (sync or async) and
+the adapter calls it with a structured event dict at each step — `inbound`
+(carrying the produced `ChannelMessage`) and `outbound` (the `ChannelReply` +
+status). Use it for live monitoring, dashboards, metrics, or asserting the flow
+in tests. Default `None` = no-op; a hook that raises is swallowed so monitoring
+can never break a live call.
+
 See **Limitations** for the gaps that remain on the production path
-(signature validation, frame buffering, artifact storage).
+(signature enforcement wiring, artifact storage).
 
 ---
 
@@ -213,11 +224,15 @@ Twilio trial credit covers a handful of incoming/outgoing minutes.
 
 Passed by `registry.instantiate()` and by the test suite:
 
-| Key                 | Meaning                                                          |
-|---------------------|------------------------------------------------------------------|
-| `mock`              | Test fake. When set, the adapter uses it instead of the wire.    |
-| `is_public_channel` | Enables allowlist gating for unknown callers.                    |
-| `stream_url`        | Overrides the Media Streams WebSocket URL in outbound TwiML.     |
+| Key                 | Meaning                                                                       |
+|---------------------|-------------------------------------------------------------------------------|
+| `mock`              | Test fake. When set, the adapter uses it instead of the wire.                 |
+| `is_public_channel` | Enables allowlist gating for unknown callers.                                 |
+| `stream_url`        | Overrides the Media Streams WebSocket URL in outbound TwiML.                  |
+| `auth_token`        | Twilio auth token for `authenticate_webhook()` (falls back to env var).       |
+| `buffer_audio`      | `True` = buffer a stream's frames and transcribe the whole utterance on `stop` (default `False` = per-frame). See Limitation 2. |
+| `max_buffer_bytes`  | Buffered-mode runaway-stream cap; forces a flush past this many bytes (default ~30 s). |
+| `event_hook`        | Optional callable (sync or async) called with a structured event dict at each inbound/outbound step — for live monitoring/dashboards and test assertions. Default `None` = no-op. |
 
 ---
 
@@ -237,7 +252,7 @@ uv run pytest glc/channels/catalogue/twilio_voice/test.py -v
 > (`pytest glc/channels/catalogue/twilio_voice/`) collects **zero** tests and
 > exits "no tests collected" — a green-looking run that ran nothing. The
 > filename is kept deliberately (the slot deliverable expects it); always invoke
-> it by full path, in CI and locally, so these 34 tests actually execute.
+> it by full path, in CI and locally, so these 42 tests actually execute.
 
 Do **not** edit the contract mock
 (`tests/channels/mocks/twilio_voice_mock.py`) or the official test file —
@@ -264,21 +279,21 @@ before deploying.**
    `From=<owner number>` and be classified `owner_paired`. **Wire the web
    layer to `authenticate_webhook()` before exposing the webhook publicly.**
 
-2. **Each media frame is transcribed individually.**
-   A `media` frame is ~20 ms of audio — far too short to transcribe into
-   words, and transcribing every frame means ~50 STT calls/second (cost +
-   rate limits). Production should **buffer** frames into a full utterance and
-   transcribe the accumulated audio once, flushing on the `stop` frame (and/or
-   silence/VAD).
+2. **Per-frame transcription by default; buffered mode is opt-in.**
+   A `media` frame is ~20 ms of audio — far too short to transcribe into words,
+   and transcribing every frame would mean ~50 STT calls/second (cost + rate
+   limits). The adapter supports a **buffered mode** that accumulates a stream's
+   frames and transcribes the whole utterance once, flushing on the `stop` frame
+   (or earlier if `max_buffer_bytes` is exceeded — a runaway-stream cap).
 
-   *Why it stays per-frame for now:* the official behavioural test
-   (`test_channel_specific_behaviour_call_to_twiml_then_media`) sends a single
-   `media` frame and asserts the returned `ChannelMessage` already carries the
-   transcript. Buffering defers the transcript until end-of-utterance, so it
-   would fail that fixed test (a `stop` frame is never sent in the test). The
-   planned fix keeps per-frame as the default (test-green) and adds buffering
-   as an **opt-in config** that flushes on `stop`, covered by a group-authored
-   test. This belongs with the real streaming/full-duplex work in S12.
+   Enable it via config: `{"buffer_audio": True}` (optional `max_buffer_bytes`,
+   default ~30 s of 8 kHz mu-law). It is **off by default** on purpose: the
+   official behavioural test (`test_channel_specific_behaviour_call_to_twiml_then_media`)
+   sends a single `media` frame and asserts the returned `ChannelMessage`
+   already carries the transcript, which only the per-frame path satisfies.
+   Buffered mode is covered by group-authored tests in `test.py` (frames defer;
+   `stop` flushes and transcribes once; the byte cap forces an early flush).
+   Real-time silence/VAD-based flushing mid-call remains S12 work.
 
 3. **The artifact handle is fabricated on the production path.**
    With no mock present, the adapter returns an `art:<sha>` handle but does not
