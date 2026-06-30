@@ -507,3 +507,128 @@ async def test_malformed_stop_frame_does_not_raise(mock):
     assert msg.trust_level == "untrusted"
     assert msg.metadata["malformed_frame"] is True
     assert msg.metadata["frame_event"] == "stop"
+
+
+# --------------------------------------------------------------------------
+# Buffered transcription (opt-in via config["buffer_audio"]=True)
+#
+# Default is False, so everything above (and the official suite) keeps the
+# per-frame behaviour. These tests validate the buffering logic against the
+# contract mock — no real STT — so they stay deterministic and offline.
+# --------------------------------------------------------------------------
+
+
+def _count_transcribe(mock, monkeypatch) -> dict[str, int]:
+    """Wrap mock.transcribe to count how many times it's actually called."""
+    calls = {"n": 0}
+    real = mock.transcribe
+
+    def counting(audio: bytes) -> str:
+        calls["n"] += 1
+        return real(audio)
+
+    monkeypatch.setattr(mock, "transcribe", counting)
+    return calls
+
+
+async def test_default_mode_is_still_per_frame(mock, owner_paired):
+    # Sanity: without the flag, one media frame transcribes immediately.
+    adapter = Adapter(config={"mock": mock})
+    await adapter.on_message(_start_event(STREAM_SID, OWNER_ID, "owner"))
+    msg = await adapter.on_message(_media_event(STREAM_SID))
+    assert msg.text == mock.transcription_text
+    assert "buffering" not in msg.metadata
+
+
+async def test_buffered_frames_defer_transcription(mock, owner_paired, monkeypatch):
+    calls = _count_transcribe(mock, monkeypatch)
+    adapter = Adapter(config={"mock": mock, "buffer_audio": True})
+    await adapter.on_message(_start_event(STREAM_SID, OWNER_ID, "owner"))
+
+    m1 = await adapter.on_message(_media_event(STREAM_SID))
+    m2 = await adapter.on_message(_media_event(STREAM_SID))
+
+    # Frames are buffered, not transcribed: no text yet, nothing persisted yet.
+    assert m1.text is None and m2.text is None
+    assert m1.metadata.get("buffering") is True
+    assert m1.channel_user_id == OWNER_ID  # caller still resolved
+    assert calls["n"] == 0
+    assert mock.artifact_store == {}
+
+
+async def test_buffered_flush_on_stop_transcribes_once(mock, owner_paired, monkeypatch):
+    calls = _count_transcribe(mock, monkeypatch)
+    adapter = Adapter(config={"mock": mock, "buffer_audio": True})
+    await adapter.on_message(_start_event(STREAM_SID, OWNER_ID, "owner"))
+    await adapter.on_message(_media_event(STREAM_SID))
+    await adapter.on_message(_media_event(STREAM_SID))
+
+    msg = await adapter.on_message(_stop_event(STREAM_SID))
+
+    # The whole utterance is transcribed exactly once on stop.
+    assert calls["n"] == 1
+    assert msg.text == mock.transcription_text
+    assert msg.voice_audio_ref.startswith("art:")
+    assert msg.metadata.get("buffered") is True
+    assert len(mock.artifact_store) == 1  # one combined WAV persisted
+
+
+async def test_buffered_max_bytes_forces_early_flush(mock, owner_paired):
+    # A tiny cap makes the first frame trip the runaway-stream safety flush.
+    adapter = Adapter(config={"mock": mock, "buffer_audio": True, "max_buffer_bytes": 1})
+    await adapter.on_message(_start_event(STREAM_SID, OWNER_ID, "owner"))
+    msg = await adapter.on_message(_media_event(STREAM_SID))
+    assert msg.text == mock.transcription_text  # flushed immediately
+    assert msg.voice_audio_ref.startswith("art:")
+    assert msg.metadata.get("buffered") is True
+
+
+# --------------------------------------------------------------------------
+# Observability hook (config["event_hook"]) — for monitoring + test assertions
+# --------------------------------------------------------------------------
+
+
+async def test_event_hook_observes_inbound_and_outbound(mock, owner_paired):
+    events: list[dict] = []
+    adapter = Adapter(config={"mock": mock, "event_hook": events.append})
+
+    await adapter.on_message(_start_event(STREAM_SID, OWNER_ID, "owner"))
+    await adapter.on_message(_media_event(STREAM_SID))
+    await adapter.send(ChannelReply(channel="twilio_voice", channel_user_id=OWNER_ID, text="hi"))
+
+    kinds = [e["event"] for e in events]
+    assert kinds.count("inbound") == 2  # start + media
+    assert "outbound" in kinds
+    # the inbound events carry the real envelope the adapter produced
+    inbound = [e for e in events if e["event"] == "inbound"]
+    assert all(e["envelope"]["channel"] == "twilio_voice" for e in inbound)
+    assert any(e["envelope"]["channel_user_id"] == OWNER_ID for e in inbound)
+
+
+async def test_event_hook_supports_async_callables(mock, owner_paired):
+    events: list[dict] = []
+
+    async def ahook(e: dict) -> None:
+        events.append(e)
+
+    adapter = Adapter(config={"mock": mock, "event_hook": ahook})
+    await adapter.on_message(_start_event(STREAM_SID, OWNER_ID, "owner"))
+    assert events and events[0]["event"] == "inbound"
+
+
+async def test_event_hook_failure_never_breaks_the_call(mock, owner_paired):
+    def boom(_e: dict) -> None:
+        raise RuntimeError("monitoring backend down")
+
+    adapter = Adapter(config={"mock": mock, "event_hook": boom})
+    # A raising hook must be swallowed — the call still produces an envelope.
+    msg = await adapter.on_message(_start_event(STREAM_SID, OWNER_ID, "owner"))
+    assert isinstance(msg, ChannelMessage)
+    assert msg.channel_user_id == OWNER_ID
+
+
+async def test_no_event_hook_is_a_noop(mock, owner_paired):
+    # Default: no hook configured -> behaves exactly as before, no error.
+    adapter = Adapter(config={"mock": mock})
+    msg = await adapter.on_message(_start_event(STREAM_SID, OWNER_ID, "owner"))
+    assert isinstance(msg, ChannelMessage)
