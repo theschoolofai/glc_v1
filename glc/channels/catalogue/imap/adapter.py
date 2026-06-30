@@ -7,14 +7,14 @@ for the standard workflow.
 
 import email
 import email.policy
-import smtplib
 import hashlib
-from datetime import datetime, timezone
+import smtplib
+from datetime import datetime
 from email.message import EmailMessage
 from typing import Any
 
 from glc.channels.base import ChannelAdapter
-from glc.channels.envelope import ChannelMessage, ChannelReply, Attachment
+from glc.channels.envelope import Attachment, ChannelMessage, ChannelReply
 from glc.security.trust_level import classify
 
 # Default bot sender address used in outbound SMTP messages.
@@ -44,7 +44,9 @@ class Adapter(ChannelAdapter):
                 # Use the mock's artifact store when running under tests
                 mock = self.mock
                 if mock is None:
-                    raise RuntimeError("Artifact store not configured; provide a mock via Adapter(config={'mock': …})")
+                    raise RuntimeError(
+                        "Artifact store not configured; provide a mock via Adapter(config={'mock': …})"
+                    )
                 ref = mock.store_artifact(sha, payload)
                 attachments.append(
                     Attachment(
@@ -87,13 +89,19 @@ class Adapter(ChannelAdapter):
         # Determine actual trust level by querying the pairing store
         trust_level = classify(self.name, sender)
 
+        # Public-channel access control (Subtask 2). Default posture is
+        # mention_only_in_public: an untrusted sender in a public-channel
+        # context is silently dropped, so no envelope reaches the agent.
+        if self.is_public_channel and trust_level == "untrusted":
+            return None
+
         return ChannelMessage(
             channel=self.name,
             channel_user_id=sender,
             user_handle=sender,
             text=text_content,
             trust_level=trust_level,
-            arrived_at=datetime.now(timezone.utc),
+            arrived_at=datetime.now().astimezone(),
             attachments=attachments,
             thread_id=thread_id,
         )
