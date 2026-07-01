@@ -1,24 +1,62 @@
-"""Stub adapter for Generic IMAP/SMTP fallback.
+"""IMAP/SMTP channel adapter — thin orchestrator.
 
-Group assignment: implement on_message and send against the mock-API
-fake in tests/channels/mocks/imap_mock.py. See docs/ADAPTER_GUIDE.md
-for the standard workflow.
+Architecture
+------------
+This file is a pure orchestrator. All protocol logic lives in the
+single-responsibility modules beside it:
+
+  mime_parser.py  — pure MIME walker (text/plain, all attachment types)
+  artifacts.py    — ephemeral attachment store (SHA256, TTL, path-guard)
+  uid_tracker.py  — SQLite UID deduplication (no reprocessing on restart)
+  smtp_sender.py  — stateless SMTP STARTTLS sender
+  connection.py   — IMAP session manager (IDLE, exponential reconnect)
+  server.py       — live demo (Zoho Mail poll loop)
+
+Inbound pipeline  on_message(raw) → ChannelMessage | None
+─────────────────────────────────────────────────────────
+  1. mime_parser.parse()        → ParsedEmail (text, attachments, headers)
+  2. trust_level.classify()     → owner_paired | user_paired | untrusted
+  3. Public-channel gate        → drop untrusted in public-channel mode
+  4. _store_attachment()        → art:<sha> ref per MIME part
+  5. uid_tracker.mark_seen()    → dedup on reconnect (live mode only)
+  6. Build ChannelMessage        → typed envelope to agent runtime
+
+Outbound pipeline  send(reply) → dict
+─────────────────────────────────────
+  1. _format_reply()            → RFC 5322 EmailMessage
+                                   From / To / Subject (Re: <original>)
+                                   Message-ID (uuid4)
+                                   In-Reply-To + References (thread chain)
+                                   Date
+  2. mock.send() or payload     → dispatch bytes via SMTP mock / real SMTP
+  3. SMTP 421 → status 429      → normalise back-pressure code
 """
 
-import email
-import email.policy
+from __future__ import annotations
+
 import hashlib
 import smtplib
+import uuid
 from datetime import datetime
 from email.message import EmailMessage
 from typing import Any
 
 from glc.channels.base import ChannelAdapter
+from glc.channels.catalogue.imap.artifacts import ArtifactStore
+from glc.channels.catalogue.imap.mime_parser import parse as _mime_parse
+from glc.channels.catalogue.imap.smtp_sender import SmtpSender
+from glc.channels.catalogue.imap.uid_tracker import UidTracker
 from glc.channels.envelope import Attachment, ChannelMessage, ChannelReply
 from glc.security.trust_level import classify
 
-# Default bot sender address used in outbound SMTP messages.
 _BOT_FROM = "bot@example.com"
+
+# Map MIME main-type to Attachment.kind
+_KIND_MAP = {
+    "image": "image",
+    "audio": "audio",
+    "video": "video",
+}
 
 
 class Adapter(ChannelAdapter):
@@ -26,114 +64,166 @@ class Adapter(ChannelAdapter):
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
-        # In tests, the config contains a "mock" key pointing to the ImapMock instance.
         self.mock = self.config.get("mock")
         self.is_public_channel = self.config.get("is_public_channel", False)
-        # Maps thread_id (Message-ID header) -> original Subject so send()
-        # can build "Re: <subject>" per-thread. Keyed by thread_id (not sender)
-        # so users with multiple threads each get the correct reply subject.
+        self._mailbox: str = self.config.get("mailbox", "INBOX")
+
+        # Subject cache: Message-ID → Subject
+        # Keyed by thread_id so each conversation thread gets the correct
+        # "Re: <subject>" on reply, even when users have multiple open threads.
         self._subject_cache: dict[str, str] = {}
 
-    def _parse_pdf_attachments(self, msg) -> list[Attachment]:
-        """Extract application/pdf parts, store them as artifacts, and return Attachment objects."""
-        attachments: list[Attachment] = []
-        for part in msg.iter_attachments():
-            if part.get_content_type() == "application/pdf":
-                payload = part.get_content()
-                sha = hashlib.sha256(payload).hexdigest()
-                # Use the mock's artifact store when running under tests
-                mock = self.mock
-                if mock is None:
-                    raise RuntimeError(
-                        "Artifact store not configured; provide a mock via Adapter(config={'mock': …})"
-                    )
-                ref = mock.store_artifact(sha, payload)
-                attachments.append(
-                    Attachment(
-                        kind="file",
-                        mime="application/pdf",
-                        ref=ref,
-                    )
-                )
-        return attachments
+        # References cache: Message-ID → References chain
+        # Used to build the RFC 5322 References thread header in replies.
+        self._references_cache: dict[str, str] = {}
 
-    async def on_message(self, raw: Any) -> ChannelMessage | None:
-        """Parse raw RFC 822 bytes into a ChannelMessage, including PDF attachments."""
-        raw_bytes = raw.get("raw") if isinstance(raw, dict) else raw
-        if not raw_bytes:
-            return None
-
-        # Subtask 5 — silent IMAP IDLE disconnects: the IDLE connection can
-        # drop without notice. Consume the dropped-state signal (i.e. re-IDLE)
-        # so the next fetched message is still processed instead of crashing.
-        if self.mock is not None and self.mock.pop_disconnect():
-            # Connection re-established; fall through and process the message.
-            pass
-
-        msg = email.message_from_bytes(raw_bytes, policy=email.policy.default)
-        sender = msg.get("From", "")
-
-        # Cache subject keyed by Message-ID (thread_id) so multiple threads
-        # from the same user each get the correct "Re: <subject>" on reply.
-        thread_id = msg.get("Message-ID", "").strip() or None
-        subject = msg.get("Subject", "")
-        if thread_id and subject:
-            self._subject_cache[thread_id] = subject
-
-        # Text extraction
-        text_content = ""
-        if msg.is_multipart():
-            for part in msg.walk():
-                if part.get_content_type() == "text/plain":
-                    text_content = part.get_content()
-                    break
-        else:
-            text_content = msg.get_content()
-
-        # PDF attachment extraction
-        attachments = self._parse_pdf_attachments(msg)
-
-        # Determine actual trust level by querying the pairing store
-        trust_level = classify(self.name, sender)
-
-        # Public-channel access control (Subtask 2). Default posture is
-        # mention_only_in_public: an untrusted sender in a public-channel
-        # context is silently dropped, so no envelope reaches the agent.
-        if self.is_public_channel and trust_level == "untrusted":
-            return None
-
-        return ChannelMessage(
-            channel=self.name,
-            channel_user_id=sender,
-            user_handle=sender,
-            text=text_content,
-            trust_level=trust_level,
-            arrived_at=datetime.now().astimezone(),
-            attachments=attachments,
-            thread_id=thread_id,
+        # Real disk artifact store (production). In test mode the mock's
+        # store_artifact() is used instead, so we skip the real store.
+        self._artifact_store: ArtifactStore | None = (
+            None if self.mock is not None else ArtifactStore()
         )
 
-    async def send(self, reply: ChannelReply) -> Any:
-        """Build an RFC 5322 message and dispatch it via the SMTP mock (or real relay).
+        # Real UID tracker (production). Not used in mock/test mode.
+        self._uid_tracker: UidTracker | None = (
+            None if self.mock is not None else UidTracker()
+        )
 
-        Outbound wire shape expected by ImapMock.send():
-            {"from": <str>, "to": <str>, "raw": <bytes>}
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
 
-        `raw` must contain valid From, To, and Subject headers so SMTP
-        relays accept it.  The reply text is set as the plain-text body.
+    def _store_attachment(self, att: dict) -> Attachment:
+        """Persist one MIME attachment blob and return a typed Attachment.
+
+        In test mode: uses mock.store_artifact(sha, data).
+        In production: uses the real ArtifactStore on disk.
         """
-        # Build the RFC 5322 message (EmailMessage uses policy.default = RFC 5322)
+        data: bytes = att["data"]
+        mime: str = att.get("mime", "application/octet-stream")
+        filename: str = att.get("filename", "")
+
+        if self.mock is not None:
+            sha = hashlib.sha256(data).hexdigest()
+            ref = self.mock.store_artifact(sha, data)
+        else:
+            assert self._artifact_store is not None
+            ref = self._artifact_store.store(data, mime=mime, filename=filename)
+
+        maintype = mime.split("/")[0]
+        kind = _KIND_MAP.get(maintype, "file")
+        return Attachment(kind=kind, mime=mime, ref=ref)
+
+    def _format_reply(self, reply: ChannelReply) -> EmailMessage:
+        """Build a complete RFC 5322 EmailMessage for the outbound reply.
+
+        Thread-continuity headers (In-Reply-To, References) are set when
+        the inbound Message-ID is available via the subject/references cache.
+        A fresh Message-ID is generated per reply (uuid4).
+        """
         out = EmailMessage()
         bot_from = self.config.get("bot_from", _BOT_FROM)
         out["From"] = bot_from
         out["To"] = reply.channel_user_id
-        # For replies: look up the cached subject by thread_id.
-        # For agent-initiated emails (no prior inbound): use config default_subject.
+        out["Message-ID"] = f"<{uuid.uuid4().hex}@glc>"
+        out["Date"] = datetime.now().astimezone().strftime("%a, %d %b %Y %H:%M:%S %z")
+
+        # Subject: "Re: <original>" when thread_id resolves in cache
         if reply.thread_id and reply.thread_id in self._subject_cache:
             out["Subject"] = f"Re: {self._subject_cache[reply.thread_id]}"
         else:
             out["Subject"] = self.config.get("default_subject", "Message from bot")
+
+        # Thread headers for MUA thread grouping (RFC 2822 §3.6.4)
+        if reply.thread_id:
+            out["In-Reply-To"] = reply.thread_id
+            prior_refs = self._references_cache.get(reply.thread_id, "")
+            ref_chain = f"{prior_refs} {reply.thread_id}".strip() if prior_refs else reply.thread_id
+            out["References"] = ref_chain
+
         out.set_content(reply.text or "")
+        return out
+
+    # ------------------------------------------------------------------
+    # ChannelAdapter interface
+    # ------------------------------------------------------------------
+
+    async def on_message(self, raw: Any) -> ChannelMessage | None:
+        """Parse a raw IMAP FETCH envelope into a ChannelMessage.
+
+        Accepts:
+          - {"uid": int, "raw": bytes}   — standard IMAP FETCH dict
+          - bare bytes                   — direct injection (tests)
+
+        Returns None on empty input, unparseable MIME, or when an
+        untrusted sender is silently dropped in public-channel mode.
+        """
+        # Transparent IDLE/disconnect handling: the IDLE connection can
+        # drop without notice. Consuming the disconnect signal here lets
+        # the server loop re-IDLE and process the next message normally.
+        if self.mock is not None and self.mock.pop_disconnect():
+            pass  # reconnect handled; fall through
+
+        raw_bytes: bytes | None = raw.get("raw") if isinstance(raw, dict) else raw
+        uid: int | None = raw.get("uid") if isinstance(raw, dict) else None
+
+        if not raw_bytes:
+            return None
+
+        # 1. Parse MIME tree (pure, no I/O)
+        parsed = _mime_parse(raw_bytes)
+        if parsed is None:
+            return None
+        parsed.uid = uid
+
+        # 2. Cache subject and references for reply thread continuity
+        if parsed.message_id:
+            if parsed.subject:
+                self._subject_cache[parsed.message_id] = parsed.subject
+            if parsed.references:
+                self._references_cache[parsed.message_id] = parsed.references
+
+        # 3. Trust classification using the bare sender address
+        trust_level = classify(self.name, parsed.sender)
+
+        # 4. Public-channel gate: silently drop untrusted senders
+        if self.is_public_channel and trust_level == "untrusted":
+            return None
+
+        # 5. Store all attachment blobs → art:<sha> refs
+        attachments: list[Attachment] = [
+            self._store_attachment(att) for att in parsed.attachments
+        ]
+
+        # 6. Mark UID as processed (live mode only — prevents reprocessing
+        #    on reconnect without relying on server-side \Seen flag alone)
+        if self._uid_tracker is not None and uid is not None:
+            self._uid_tracker.mark_seen(self._mailbox, uid)
+
+        return ChannelMessage(
+            channel=self.name,
+            channel_user_id=parsed.sender,
+            user_handle=parsed.sender,
+            text=parsed.text,
+            trust_level=trust_level,
+            arrived_at=datetime.now().astimezone(),
+            attachments=attachments,
+            thread_id=parsed.message_id,
+        )
+
+    async def send(self, reply: ChannelReply) -> Any:
+        """Build an RFC 5322 message and dispatch via SMTP (or mock).
+
+        Outbound wire shape:
+            {"from": str, "to": str, "raw": bytes}
+
+        `raw` contains valid From, To, Subject, Message-ID, Date,
+        In-Reply-To, and References headers so SMTP relays and MUAs
+        accept it and thread it correctly.
+
+        SMTP 421 (service unavailable) is normalised to {"status": 429}.
+        """
+        out = self._format_reply(reply)
+        bot_from = self.config.get("bot_from", _BOT_FROM)
 
         payload: dict[str, Any] = {
             "from": bot_from,
@@ -141,7 +231,6 @@ class Adapter(ChannelAdapter):
             "raw": out.as_bytes(),
         }
 
-        # Dispatch — always return mock's result so rate-limit dicts propagate.
         mock = self.config.get("mock")
         if mock is not None:
             try:
@@ -151,6 +240,7 @@ class Adapter(ChannelAdapter):
                     return {"status": 429, "error": str(exc)}
                 raise
 
+            # Normalise mock's numeric 421 → 429
             if isinstance(result, dict):
                 status = result.get("status")
                 if isinstance(status, str) and status.isdigit():
@@ -159,4 +249,11 @@ class Adapter(ChannelAdapter):
                     return {**result, "status": 429}
             return result
 
-        return payload
+        sender = SmtpSender(
+            host=self.config.get("smtp_host", ""),
+            port=int(self.config.get("smtp_port", 587)),
+            user=self.config.get("smtp_user", ""),
+            password=self.config.get("smtp_password", ""),
+            bot_from=bot_from,
+        )
+        return sender.send(to=reply.channel_user_id, raw_bytes=out.as_bytes())
