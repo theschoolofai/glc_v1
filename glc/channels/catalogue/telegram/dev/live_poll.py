@@ -100,7 +100,9 @@ async def main() -> None:
                                     else:
                                         print("Update dropped (not allowed or no message)")
                         elif resp.status_code == 409:
-                            print("Conflict: another webhook or long poll is running for this bot. Please stop it.")
+                            print(
+                                "Conflict: another webhook or long poll is running for this bot. Please stop it."
+                            )
                             await asyncio.sleep(5)
                         else:
                             print(f"Telegram API getUpdates returned status {resp.status_code}")

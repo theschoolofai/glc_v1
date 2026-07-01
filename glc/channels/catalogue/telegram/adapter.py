@@ -125,7 +125,7 @@ class Adapter(ChannelAdapter):
 
         # Arrived at
         try:
-            arrived_at = datetime.fromtimestamp(float(message.date),UTC)
+            arrived_at = datetime.fromtimestamp(float(message.date or 0), UTC)
         except (ValueError, TypeError):
             arrived_at = datetime.now(UTC)
 
@@ -148,12 +148,16 @@ class Adapter(ChannelAdapter):
     async def send(self, reply: ChannelReply) -> Any:
         # Build sendMessage payload
         payload = {
-            "chat_id": int(reply.channel_user_id) if reply.channel_user_id.isdigit() else reply.channel_user_id,
+            "chat_id": int(reply.channel_user_id)
+            if reply.channel_user_id.isdigit()
+            else reply.channel_user_id,
             "text": reply.text or "",
         }
 
         if reply.thread_id:
-            payload["message_thread_id"] = int(reply.thread_id) if reply.thread_id.isdigit() else reply.thread_id
+            payload["message_thread_id"] = (
+                int(reply.thread_id) if reply.thread_id.isdigit() else reply.thread_id
+            )
 
         # In mock mode, call mock.send
         mock = self.config.get("mock")
