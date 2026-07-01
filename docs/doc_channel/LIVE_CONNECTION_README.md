@@ -2,13 +2,23 @@
 
 This document explains what was implemented to support a live LINE messaging connection and provides instructions for testing the integration end-to-end with the main app.
 
+## Architecture Note
+The integration relies on a standalone bridge application (`bridge.py`) which acts as an intermediary. It receives inbound HTTPS webhooks directly from the LINE messaging platform, then forwards those events to the main GLC gateway via a persistent WebSocket connection. In a local testing environment, `ngrok` is used to expose the bridge's local port to the public internet so that LINE can reach it.
+
+```mermaid
+flowchart LR
+    User([User on LINE App]) <-->|Messages| LineServers[LINE Servers]
+    LineServers <-->|HTTPS Webhook| Ngrok[Ngrok Tunnel]
+    Ngrok <-->|HTTP| Bridge[FastAPI Bridge]
+    Bridge <-->|WebSocket| Gateway[GLC Gateway]
+```
+
 ## What Was Done
 
 1. **LINE Webhook Bridge:** Implemented a FastAPI application (`glc/channels/catalogue/line/bridge.py`) that acts as a webhook receiver for LINE events on the `/webhooks/line` endpoint.
 2. **WebSocket Integration:** The bridge connects to the main GLC gateway via WebSockets (`ws://localhost:8111/v1/channels/line`) to forward incoming messages and receive agent replies.
-3. **Tunneling Tooling (Ngrok):** Added `ngrok.tgz` to locally expose the webhook port to the internet. 
-4. **Git Ignore Cleanup:** Updated the `.gitignore` file to ensure `ngrok.tgz` and the extracted binary are excluded from version control, maintaining repository hygiene.
-5. **Organized Tests:** Moved and renamed bridge testing logic into `tests/channels/test_line_bridge_ws.py` to align with the project's testing structure.
+3. **Tunneling Tooling (Ngrok):** Added `ngrok.tgz` to locally expose the webhook port to the internet.
+4. **Organized Tests:** Added bridge testing logic into `tests/channels/test_line_bridge_ws.py`.
 
 ## How to Test Live in Combination With the App
 
@@ -63,6 +73,6 @@ The reply will flow back through the exact same path to your device.
 > [!NOTE]
 > **First-Time Setup (Allowed Senders):** 
 > The first time you send a message, the application might drop it because your user ID is not yet in the `allowed_senders` list. 
-> Check your main GLC application logs for an error message indicating the message was dropped. This log will include your unique user ID.
+> Check the bridge application logs for an error message indicating the message was dropped. This log will include your unique user ID.
 > Copy that user ID and add it to the `allowed_senders` list under `defaults:` in your `glc/channels.yaml` file (or `~/.glc/channels.yaml`). 
 > Once added, send another message to successfully communicate with the bot.
