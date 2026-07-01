@@ -44,6 +44,7 @@ from typing import Any
 from glc.channels.base import ChannelAdapter
 from glc.channels.catalogue.imap.artifacts import ArtifactStore
 from glc.channels.catalogue.imap.mime_parser import parse as _mime_parse
+from glc.channels.catalogue.imap.smtp_sender import SmtpSender
 from glc.channels.catalogue.imap.uid_tracker import UidTracker
 from glc.channels.envelope import Attachment, ChannelMessage, ChannelReply
 from glc.security.trust_level import classify
@@ -248,4 +249,11 @@ class Adapter(ChannelAdapter):
                     return {**result, "status": 429}
             return result
 
-        return payload
+        sender = SmtpSender(
+            host=self.config.get("smtp_host", ""),
+            port=int(self.config.get("smtp_port", 587)),
+            user=self.config.get("smtp_user", ""),
+            password=self.config.get("smtp_password", ""),
+            bot_from=bot_from,
+        )
+        return sender.send(to=reply.channel_user_id, raw_bytes=out.as_bytes())

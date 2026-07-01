@@ -36,8 +36,8 @@ class SmtpSender:
 
     Usage:
         sender = SmtpSender(host="smtp.zoho.in", port=587,
-                            user="bot@domain.com", password="app-pw",
-                            bot_from="bot@domain.com")
+                            user="bot@example.com", password="<app-password>",
+                            bot_from="bot@example.com")
         result = sender.send(to="user@example.com", raw_bytes=msg_bytes)
         # {"status": 250, "message_id": "<...>"}
         # {"status": 429, "error": "..."} on SMTP 421

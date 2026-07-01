@@ -26,6 +26,11 @@ import ssl
 import time
 from typing import Any
 
+try:
+    import certifi
+except ImportError:
+    certifi = None
+
 log = logging.getLogger(__name__)
 
 # Exponential backoff delays in seconds, capped at 60.
@@ -37,7 +42,7 @@ class ImapConnection:
 
     Usage (production):
         conn = ImapConnection(host="imap.zoho.in", port=993,
-                              user="bot@domain.com", password="app-pw")
+                              user="bot@domain.com", password="<app-password>")
         conn.connect()
         for ev in conn.fetch_unseen():
             process(ev)
@@ -75,7 +80,10 @@ class ImapConnection:
         """Open SSL connection, LOGIN, SELECT mailbox."""
         if self.mock is not None:
             return  # mock mode — no real TCP
-        ctx = ssl.create_default_context()
+        if certifi is not None:
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        else:
+            ctx = ssl.create_default_context()
         self._conn = imaplib.IMAP4_SSL(self.host, self.port, ssl_context=ctx)
         self._conn.login(self.user, self.password)
         self._conn.select(self.mailbox)
