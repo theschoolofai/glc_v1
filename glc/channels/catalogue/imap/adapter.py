@@ -39,7 +39,7 @@ import smtplib
 import uuid
 from datetime import datetime
 from email.message import EmailMessage
-from typing import Any
+from typing import Any, Literal
 
 from glc.channels.base import ChannelAdapter
 from glc.channels.catalogue.imap.artifacts import ArtifactStore
@@ -52,7 +52,7 @@ from glc.security.trust_level import classify
 _BOT_FROM = "bot@example.com"
 
 # Map MIME main-type to Attachment.kind
-_KIND_MAP = {
+_KIND_MAP: dict[str, Literal["image", "audio", "video", "file", "location"]] = {
     "image": "image",
     "audio": "audio",
     "video": "video",
@@ -79,14 +79,10 @@ class Adapter(ChannelAdapter):
 
         # Real disk artifact store (production). In test mode the mock's
         # store_artifact() is used instead, so we skip the real store.
-        self._artifact_store: ArtifactStore | None = (
-            None if self.mock is not None else ArtifactStore()
-        )
+        self._artifact_store: ArtifactStore | None = None if self.mock is not None else ArtifactStore()
 
         # Real UID tracker (production). Not used in mock/test mode.
-        self._uid_tracker: UidTracker | None = (
-            None if self.mock is not None else UidTracker()
-        )
+        self._uid_tracker: UidTracker | None = None if self.mock is not None else UidTracker()
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -147,7 +143,7 @@ class Adapter(ChannelAdapter):
     # ChannelAdapter interface
     # ------------------------------------------------------------------
 
-    async def on_message(self, raw: Any) -> ChannelMessage | None:
+    async def on_message(self, raw: Any) -> ChannelMessage | None:  # type: ignore[override]
         """Parse a raw IMAP FETCH envelope into a ChannelMessage.
 
         Accepts:
@@ -190,9 +186,7 @@ class Adapter(ChannelAdapter):
             return None
 
         # 5. Store all attachment blobs → art:<sha> refs
-        attachments: list[Attachment] = [
-            self._store_attachment(att) for att in parsed.attachments
-        ]
+        attachments: list[Attachment] = [self._store_attachment(att) for att in parsed.attachments]
 
         # 6. Mark UID as processed (live mode only — prevents reprocessing
         #    on reconnect without relying on server-side \Seen flag alone)
