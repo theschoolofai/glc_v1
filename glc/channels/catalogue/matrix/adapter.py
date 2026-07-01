@@ -16,6 +16,7 @@ See ``README.md`` and ``docs/ADAPTER_GUIDE.md`` for the workflow.
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -24,6 +25,8 @@ from glc.channels.envelope import Attachment, ChannelMessage, ChannelReply
 from glc.security.allowlists import allowed
 from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
+
+logger = logging.getLogger("glc.matrix.adapter")
 
 _AttachmentKind = Literal["image", "audio", "video", "file", "location"]
 
@@ -102,26 +105,36 @@ class Adapter(ChannelAdapter):
 
     # -- outbound --------------------------------------------------------
 
+
+   
     async def send(self, reply: ChannelReply) -> Any:
-        body: dict[str, Any] = {
+        logger.info("send received reply envelope: %s", reply.model_dump_json())
+
+        payload: dict[str, Any] = {
             "msgtype": "m.text",
             "body": reply.text or "",
         }
-        # Media replies carry the artifact/URL handle alongside the text
+                # Media replies carry the artifact/URL handle alongside the text
         # body so the gateway can attach it on dispatch.
         if reply.voice_audio_ref:
-            body["msgtype"] = "m.audio"
-            body["url"] = reply.voice_audio_ref
+            payload["msgtype"] = "m.audio"
+            payload["url"] = reply.voice_audio_ref
         elif reply.attachments:
             first = reply.attachments[0]
-            body["msgtype"] = f"m.{first.kind}"
-            body["url"] = first.ref
+            payload["msgtype"] = f"m.{first.kind}"
+            payload["url"] = first.ref
+
 
         mock = self.config.get("mock")
         if mock is not None:
-            return await mock.send(body)
-        # Real client path would PUT to /rooms/{roomId}/send/... here.
-        return body
+            out = await mock.send(payload)
+            logger.info("send outbound native payload: %r", out)
+            return out
+
+
+        logger.info("send outbound native payload: %r", payload)
+        return payload
+
 
     # -- helpers ---------------------------------------------------------
 
