@@ -39,7 +39,7 @@ import smtplib
 import uuid
 from datetime import datetime
 from email.message import EmailMessage
-from typing import Any
+from typing import Any, Literal
 
 from glc.channels.base import ChannelAdapter
 from glc.channels.catalogue.imap.artifacts import ArtifactStore
@@ -52,7 +52,7 @@ from glc.security.trust_level import classify
 _BOT_FROM = "bot@example.com"
 
 # Map MIME main-type to Attachment.kind
-_KIND_MAP = {
+_KIND_MAP: dict[str, Literal["image", "audio", "video", "file", "location"]] = {
     "image": "image",
     "audio": "audio",
     "video": "video",
@@ -143,7 +143,7 @@ class Adapter(ChannelAdapter):
     # ChannelAdapter interface
     # ------------------------------------------------------------------
 
-    async def on_message(self, raw: Any) -> ChannelMessage | None:
+    async def on_message(self, raw: Any) -> ChannelMessage | None:  # type: ignore[override]
         """Parse a raw IMAP FETCH envelope into a ChannelMessage.
 
         Accepts:

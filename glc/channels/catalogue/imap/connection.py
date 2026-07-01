@@ -105,7 +105,7 @@ class ImapConnection:
         messages: list[dict[str, Any]] = []
         for uid_bytes in uid_list:
             uid = int(uid_bytes)
-            _, msg_data = self._conn.fetch(uid_bytes, "(RFC822)")
+            _, msg_data = self._conn.fetch(str(uid), "(RFC822)")
             for part in msg_data:
                 if isinstance(part, tuple):
                     messages.append({"uid": uid, "raw": part[1]})
@@ -115,7 +115,7 @@ class ImapConnection:
         """Set \\Seen flag on the server for *uid*."""
         if self.mock is not None or self._conn is None:
             return
-        self._conn.store(str(uid).encode(), "+FLAGS", "\\Seen")
+        self._conn.store(str(uid), "+FLAGS", "\\Seen")
 
     def idle_start(self) -> None:
         """Send IDLE command — server will push EXISTS/RECENT notifications."""

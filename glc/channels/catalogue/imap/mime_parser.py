@@ -114,9 +114,10 @@ def _walk_attachments(msg: EmailMessage) -> list[dict]:
         if ct in _TEXT_TYPES or part.get_content_maintype() == "multipart":
             continue
         try:
-            data: bytes | None = part.get_payload(decode=True)
+            payload = part.get_payload(decode=True)
         except Exception:
-            data = None
+            payload = None
+        data: bytes | None = payload if isinstance(payload, bytes) else None
         if not data:
             continue
         attachments.append(
