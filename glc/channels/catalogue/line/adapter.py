@@ -27,7 +27,7 @@ Config keys read by this adapter:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from glc.channels.base import ChannelAdapter
@@ -93,7 +93,6 @@ class Adapter(ChannelAdapter):
 
         # In public channels with the default mention_only_in_public
         # posture, we let the gateway mention-filtering logic handle untrusted strangers.
-        is_public = self.config.get("is_public_channel", False)
         # Trust classification is still attached to the message.
 
         return ChannelMessage(
@@ -102,7 +101,7 @@ class Adapter(ChannelAdapter):
             user_handle=parsed.user_id,
             text=parsed.text,
             trust_level=trust,
-            arrived_at=datetime.now(timezone.utc),
+            arrived_at=datetime.now(UTC),
         )
 
     # ------------------------------------------------------------------
