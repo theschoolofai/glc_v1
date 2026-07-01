@@ -24,6 +24,14 @@ LIMITS = {
     "github": {"rpm": 10, "rpd": 50, "tpm": 99999999, "cooldown": 6, "max_ctx": 8000},
 }
 
+# Multiple Gemini keys (one per Google project) fan out into gemini_1..gemini_N
+# providers, each carrying an identical copy of the base "gemini" limits — every
+# key is a separate project with its own free-tier quota. MAX_GEMINI_KEYS caps how
+# many limit rows we generate, so there is never a gemini_N provider without one.
+MAX_GEMINI_KEYS = 10
+for _i in range(1, MAX_GEMINI_KEYS + 1):
+    LIMITS[f"gemini_{_i}"] = dict(LIMITS["gemini"])
+
 SHORTCUTS = {
     "g": "gemini",
     "gem": "gemini",
@@ -138,14 +146,31 @@ class RateState:
 class Router:
     def __init__(self, providers: dict, order: list[str]):
         self.providers = providers
-        self.order = [p for p in order if p in providers]
+        self.order = self.expand(order)
         self.state = defaultdict(RateState)
         self.lock = asyncio.Lock()
 
+    def expand(self, names):
+        """Map logical names/aliases to concrete provider keys, in order.
+
+        Applies shortcut aliases (g/gem -> gemini), fans a group name out to its
+        live instances (gemini -> gemini_1..N), drops unknowns, and de-dups while
+        preserving order. Routing all candidate lists through here means "gemini"
+        resolves to the configured keys in the default ladder, agent pins, and
+        tier routing alike."""
+        out, seen = [], set()
+        for n in names:
+            r = resolve(n) or n
+            hits = [r] if r in self.providers else [p for p in self.providers if p.startswith(r + "_")]
+            for p in hits:
+                if p not in seen:
+                    seen.add(p)
+                    out.append(p)
+        return out
+
     def candidates(self, override=None):
         if override:
-            r = resolve(override)
-            return [r] if r and r in self.providers else []
+            return self.expand([override])
         return list(self.order)
 
     def pick(self, est_tokens, candidates, required_caps: list[str] | None = None):

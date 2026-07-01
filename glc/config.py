@@ -20,6 +20,22 @@ PACKAGED_POLICY = Path(__file__).parent / "policy" / "policy.yaml"
 PACKAGED_CHANNELS = Path(__file__).parent / "channels.yaml"
 
 
+def gemini_api_keys() -> list[str]:
+    """Parse GEMINI_API_KEY, which may hold a single key or a comma-separated
+    list of keys (one per Google project). Whitespace is stripped, blanks are
+    dropped, and duplicates are removed while preserving order — a key pasted
+    twice would otherwise be metered as two independent quotas and overrun the
+    real per-project limit. Returns [] when unset."""
+    raw = os.getenv("GEMINI_API_KEY") or ""
+    seen: set[str] = set()
+    keys: list[str] = []
+    for k in (part.strip() for part in raw.split(",")):
+        if k and k not in seen:
+            seen.add(k)
+            keys.append(k)
+    return keys
+
+
 def policy_yaml_path() -> Path:
     user = CONFIG_DIR / "policy.yaml"
     return user if user.exists() else PACKAGED_POLICY

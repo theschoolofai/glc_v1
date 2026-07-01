@@ -28,6 +28,8 @@ from typing import Literal
 
 import httpx
 
+from glc.config import gemini_api_keys
+
 TaskType = Literal["retrieval_document", "retrieval_query"]
 EMBED_DIM = 768  # both providers are pinned to this
 
@@ -204,7 +206,9 @@ def build_embedders() -> tuple[list[EmbeddingProvider], list[str]]:
         "ollama": OllamaEmbedder(ollama_model, ollama_url),
     }
     if fallback_provider == "gemini":
-        key = os.getenv("GEMINI_API_KEY")
+        # First of GEMINI_API_KEY (which may be a comma-separated list of keys) —
+        # the embedder needs a single key, not the whole joined string.
+        key = next(iter(gemini_api_keys()), None)
         if key:
             registry["gemini"] = GeminiEmbedder(key, fallback_model)
 

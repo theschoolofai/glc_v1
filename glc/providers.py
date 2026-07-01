@@ -31,6 +31,9 @@ from typing import Any
 
 import httpx
 
+from glc.config import gemini_api_keys
+from glc.routing import MAX_GEMINI_KEYS
+
 # ────────────────────────────────────────────────────────────────────────────
 # V9 multimodal helpers
 # ────────────────────────────────────────────────────────────────────────────
@@ -1163,8 +1166,13 @@ def build_providers(cache_store):
     - groq worker default: openai/gpt-oss-120b (was llama-3.3-70b-versatile, now moved to router pool)
     """
     out = {}
-    if k := os.getenv("GEMINI_API_KEY"):
-        out["gemini"] = GeminiProvider(k, os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), cache_store)
+    # GEMINI_API_KEY may hold one key or a comma-separated list of per-project
+    # keys; fan each out into its own gemini_1..gemini_N instance (capped at
+    # MAX_GEMINI_KEYS) so the router meters and load-balances them independently.
+    # The model is still env-driven (GEMINI_MODEL); all keys share it.
+    gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    for idx, key in enumerate(gemini_api_keys()[:MAX_GEMINI_KEYS], start=1):
+        out[f"gemini_{idx}"] = GeminiProvider(key, gemini_model, cache_store)
     if k := os.getenv("NVIDIA_API_KEY"):
         out["nvidia"] = NvidiaProvider(k, os.getenv("NVIDIA_MODEL", "deepseek-ai/deepseek-v3.2"))
     if k := os.getenv("GROQ_API_KEY"):
@@ -1183,7 +1191,10 @@ def build_providers(cache_store):
     # instance, so Router.pick() — which reads provider.capabilities directly —
     # sees the resolved truth instead of the class-level default.
     for name, p in out.items():
-        p.capabilities = model_capabilities(name, p.model, getattr(p, "capabilities", {}))
+        # gemini_1..N share the base "gemini" capability rules; resolve caps under
+        # the base name so per-model overrides (e.g. reasoning) apply to every key.
+        base = "gemini" if name.startswith("gemini_") else name
+        p.capabilities = model_capabilities(base, p.model, getattr(p, "capabilities", {}))
     return out
 
 
