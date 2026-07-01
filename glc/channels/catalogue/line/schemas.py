@@ -8,9 +8,13 @@ from pydantic import BaseModel
 
 
 class LineEvent(BaseModel):
-    """Projection of the LINE webhook event fields the adapter consumes."""
+    """Parsed fields from a single LINE webhook event.
+
+    This is a lightweight projection of the nested webhook dict —
+    just the fields the adapter needs for envelope construction.
+    """
 
     user_id: str
     text: str | None = None
-    reply_token: str | None = None
+    reply_token: str
     message_type: str = "text"

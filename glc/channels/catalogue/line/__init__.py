@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from glc.channels.catalogue.line.adapter import Adapter, LineTransport
+from glc.channels.catalogue.line.adapter import Adapter
 
-__all__ = ["Adapter", "LineTransport"]
+__all__ = ["Adapter"]

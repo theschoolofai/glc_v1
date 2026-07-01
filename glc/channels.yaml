@@ -6,7 +6,7 @@ defaults:
   rate_limits:
     messages_per_minute: 30
     tool_calls_per_minute: 20
-  allowed_senders: []            # empty == owner-only by default
+  allowed_senders: []            # add allowed senders here to receive message
   mention_only_in_public: true
 
 channels:
@@ -16,7 +16,7 @@ channels:
   whatsapp:    {enabled: false}
   teams:       {enabled: false}
   matrix:      {enabled: false}
-  line:        {enabled: false}
+  line:        {enabled: true}
   signal:      {enabled: false}
   gmail:       {enabled: false}
   imap:        {enabled: false}
