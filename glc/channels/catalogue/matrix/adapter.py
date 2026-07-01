@@ -23,7 +23,6 @@ from typing import Any, Literal
 from glc.channels.base import ChannelAdapter
 from glc.channels.envelope import Attachment, ChannelMessage, ChannelReply
 from glc.security.allowlists import allowed
-from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
 
 logger = logging.getLogger("glc.matrix.adapter")
@@ -73,15 +72,15 @@ class Adapter(ChannelAdapter):
         # Public-channel posture: an unknown, un-mentioned sender is
         # silently dropped (allowlists default to mention_only_in_public).
         if self.config.get("is_public_channel"):
-            owner_ids = [o.channel_user_id for o in get_pairing_store().owners(self.name)]
+            owner_ids = [sender] if trust_level == "owner_paired" else []
             ok, _reason = allowed(
                 self.name,
                 sender,
                 owner_ids=owner_ids,
                 is_public_channel=True,
-                was_mentioned=False,
+                was_mentioned=self._was_mentioned(content, self.config.get("bot_mxid")),
             )
-            if not ok and trust_level == "untrusted":
+            if not ok:
                 return None
 
         attachments, voice_ref = self._extract_media(content, mock)
@@ -154,9 +153,7 @@ class Adapter(ChannelAdapter):
                     return ev
         return None
 
-    def _extract_media(
-        self, content: dict[str, Any], mock: Any
-    ) -> tuple[list[Attachment], str | None]:
+    def _extract_media(self, content: dict[str, Any], mock: Any) -> tuple[list[Attachment], str | None]:
         kind = _MEDIA_KINDS.get(content.get("msgtype", ""))
         if kind is None:
             return [], None
@@ -176,6 +173,16 @@ class Adapter(ChannelAdapter):
         if kind == "audio":
             return [att], ref
         return [att], None
+
+    @staticmethod
+    def _was_mentioned(content: dict[str, Any], bot_mxid: str | None) -> bool:
+        """True if the bot's own mxid appears in the event's explicit
+        mentions (``content["m.mentions"]["user_ids"]``, MSC 3952). Absent
+        ``bot_mxid`` means mention detection is impossible, so ``False``."""
+        if not bot_mxid:
+            return False
+        mentions = (content.get("m.mentions") or {}).get("user_ids") or []
+        return bot_mxid in mentions
 
     @staticmethod
     def _thread_id(content: dict[str, Any]) -> str | None:

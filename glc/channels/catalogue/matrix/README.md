@@ -25,9 +25,16 @@ Inbound flow (`on_message`):
    does not carry it inside the timeline).
 3. **Classify trust** — `glc.security.trust_level.classify("matrix", sender)`.
    Trust is decided in deterministic code, never by the model
-   (GLC architectural move #5).
-4. **Public-channel gate** — in a public room, an unknown, un-mentioned
-   sender is dropped via `glc.security.allowlists.allowed()`.
+   (GLC architectural move #5). The returned `trust_level` is the
+   single source of truth for the sender's identity — the public-channel
+   gate reuses it instead of hitting the pairing store a second time.
+4. **Public-channel gate** — in a public room,
+   `glc.security.allowlists.allowed()` decides whether the sender
+   passes. `mention_only_in_public` applies uniformly across trust
+   levels: owners and paired users get dropped too if they don't
+   explicitly mention the bot. Mentions are read from
+   `content["m.mentions"]["user_ids"]` (Matrix spec, MSC 3952) and
+   compared against `config["bot_mxid"]`.
 5. **Resolve media** — `m.image`/`m.audio`/`m.video`/`m.file` events
    carry an `mxc://` URI in `content.url`. The adapter dereferences it
    to bytes and stores an `art:<sha>` artifact handle. The raw `mxc://`
@@ -50,7 +57,8 @@ For a real homeserver (the test suite needs none of these — it runs
 fully against the mock):
 
 - `MATRIX_HOMESERVER`
-- `MATRIX_USER_ID`
+- `MATRIX_USER_ID` — also passed into the adapter as `config["bot_mxid"]`
+  so the public-channel gate can detect explicit mentions of the bot.
 - `MATRIX_ACCESS_TOKEN`
 
 ## Free-tier limits
@@ -65,6 +73,12 @@ infrastructure. No paid API is used anywhere in the shipped adapter.
   `/_matrix/media/v3/download/...`. Surfacing the raw `mxc://` as an
   attachment ref would hand the runtime a handle it cannot dereference,
   so we resolve it to bytes and emit an `art:<sha>` handle instead.
+- **Explicit mentions live in `m.mentions`.** Matrix carries intentional
+  mentions in `content["m.mentions"]["user_ids"]` (MSC 3952, now part of
+  the spec) rather than by string-matching a display name in the body.
+  The adapter compares that list against `config["bot_mxid"]` to decide
+  `was_mentioned` for the public-channel gate. Missing `bot_mxid` means
+  detection is impossible and defaults to `False` — the safer posture.
 - **Millisecond timestamps.** `origin_server_ts` is epoch
   *milliseconds*; the envelope wants a `datetime`, so we divide by 1000
   and attach UTC.
@@ -96,7 +110,13 @@ using the pairing store:
 Because `classify()` reads the same `~/.glc/pairings.sqlite` store the
 rest of GLC uses, the test's pairing setup and the adapter's runtime
 decision share one source of truth — a bad inbound message cannot
-upgrade its own trust level.
+upgrade its own trust level. The adapter derives `owner_ids` for the
+public-channel gate from the single `classify()` result rather than a
+second `owners()` call, closing the race window a two-lookup posture
+would open during pairing revocation. And because the public-channel
+drop applies uniformly across trust levels, a `user_paired` sender who
+doesn't mention the bot is dropped the same as a stranger — the mention
+gate is orthogonal to trust.
 
 ## Tests
 
