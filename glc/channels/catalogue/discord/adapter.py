@@ -17,6 +17,7 @@ See docs/ADAPTER_GUIDE.md and glc/channels/catalogue/discord/README.md.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,6 +29,8 @@ from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
 
 CHANNEL = "discord"
+
+_log = logging.getLogger(__name__)
 
 
 class Adapter(ChannelAdapter):
@@ -44,6 +47,18 @@ class Adapter(ChannelAdapter):
     def _is_public(self) -> bool:
         return bool(self.config.get("is_public_channel", False))
 
+    @property
+    def _ignore_bots(self) -> bool:
+        """Drop bot-authored messages (including our own) before processing.
+        Opt-in; default off preserves the integrated adapter contract."""
+        return bool(self.config.get("ignore_bots", False))
+
+    @property
+    def _enforce_allowlist_in_dm(self) -> bool:
+        """Gate private (DM) messages through the allowlist, not just public
+        channels. Opt-in; default off preserves the integrated contract."""
+        return bool(self.config.get("enforce_allowlist_in_dm", False))
+
     # ── inbound: Discord dispatch frame → ChannelMessage ──────────────────
 
     async def on_message(self, raw: Any) -> ChannelMessage | None:
@@ -58,11 +73,46 @@ class Adapter(ChannelAdapter):
         payload = raw.get("d", raw) if isinstance(raw, dict) else raw
         msg = DiscordMessage.model_validate(payload)
 
+        # Data minimization / loop prevention: optionally drop automated
+        # (bot-authored, including our own) messages before any classification
+        # or directory lookup. Other bots are an untrusted automation surface
+        # and self-replies cause echo loops.
+        if self._ignore_bots and msg.author.bot:
+            _log.info("discord: dropped bot-authored message %s from %s", msg.id, msg.author.id)
+            return None
+
         user_id = msg.author.id
         trust_level = classify(CHANNEL, user_id)
 
-        # Resolve every mentioned user through the transport's directory so the
-        # agent sees handles, not raw <@id> tokens.
+        # Whether the bot itself was addressed. Computed from the raw mention
+        # list (not the resolved handles) so it stays correct independent of
+        # the resolution step below and remains available to the gate.
+        bot_id = self.config.get("bot_user_id")
+        was_mentioned = bool(bot_id) and any(m.id == str(bot_id) for m in msg.mentions)
+
+        # Allowlist gate. Public channels always gate strangers. DMs are gated
+        # only when the operator opts in via `enforce_allowlist_in_dm` — this
+        # closes the gap where an untrusted stranger could reach the agent in a
+        # DM (token cost + prompt-injection surface) while public strangers are
+        # dropped. Owners pass (subject to the mention-only-in-public rule).
+        # Dropping here, before mention resolution, means rejected messages
+        # incur no get_user() API calls on the rejected sender's behalf.
+        if self._is_public or self._enforce_allowlist_in_dm:
+            owner_ids = [r.channel_user_id for r in get_pairing_store().owners(CHANNEL)]
+            ok, reason = allowed(
+                CHANNEL,
+                user_id,
+                owner_ids=owner_ids,
+                is_public_channel=self._is_public,
+                was_mentioned=was_mentioned,
+            )
+            if not ok:
+                _log.info("discord: dropped message %s from %s: %s", msg.id, user_id, reason)
+                return None
+
+        # Resolve mentioned users through the transport's directory so the agent
+        # sees handles, not raw <@id> tokens. Done only after the gate, so we
+        # never look up users for a message we are about to drop.
         mentions: list[str] = []
         for m in msg.mentions:
             resolved = None
@@ -71,24 +121,6 @@ class Adapter(ChannelAdapter):
                 if u:
                     resolved = u.get("username") or u.get("global_name")
             mentions.append(resolved or m.username)
-
-        bot_id = self.config.get("bot_user_id")
-        was_mentioned = bool(bot_id) and any(m.id == str(bot_id) for m in msg.mentions)
-
-        # Public channels: gate strangers through the allowlist before the
-        # message reaches the agent. Owners always pass (subject to the
-        # mention-only-in-public rule).
-        if self._is_public:
-            owner_ids = [r.channel_user_id for r in get_pairing_store().owners(CHANNEL)]
-            ok, _reason = allowed(
-                CHANNEL,
-                user_id,
-                owner_ids=owner_ids,
-                is_public_channel=True,
-                was_mentioned=was_mentioned,
-            )
-            if not ok:
-                return None
 
         return ChannelMessage(
             channel=CHANNEL,
