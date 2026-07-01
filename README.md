@@ -27,6 +27,34 @@ gateway db, channels.yaml, and a per-installation token. The token
 gates `/v1/control/*` and the channel WebSocket. Print it with
 `uv run glc token`.
 
+## New configuration supporting multiple Gemini keys
+
+> _To be included into the v2 README (`theschoolofai/glc_v2`) 
+
+**`GEMINI_API_KEY` accepts a comma-separated list.** 
+Give it one key and the gateway registers a single Gemini worker as
+before; 
+Add more keys (one per project) — and it automatically fans
+them out into independent `gemini_1..gemini_N` workers (up to 10), which the
+router load-balances so you parallelise across each project's free-tier quota.
+Whitespace is trimmed and duplicate keys are ignored. All keys share
+`GEMINI_MODEL` (default `gemini-2.5-flash`); the first key also backs the
+Gemini embedder.
+
+> **Note:** `glc/voice/tts/providers/gemini_live/adapter.py` still reads
+> `GEMINI_API_KEY` as a single raw value, so a comma-separated list will
+> break Gemini-Live voice TTS. That adapter lives in a group-owned slot and
+> is intentionally left untouched here; it should switch to
+> `glc.config.gemini_api_keys()[0]` when that slot is implemented.
+
+```sh
+# .env — a single key (unchanged behaviour)
+GEMINI_API_KEY=AIza...one
+
+# .env — several keys, fanned out to gemini_1, gemini_2, gemini_3
+GEMINI_API_KEY=AIza...one,AIza...two,AIza...three
+```
+
 ## Point your existing S9 / S10 client at it
 
 ```sh

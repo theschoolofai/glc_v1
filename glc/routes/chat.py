@@ -367,7 +367,9 @@ async def chat(req: ChatRequest, request: Request):
 
     if req.agent and not req.provider:
         pinned = AGENT_ROUTING.get(req.agent)
-        if pinned and pinned in rtr.providers:
+        # rtr.expand([...]) resolves aliases and fans "gemini" out to gemini_1..N;
+        # a non-empty result means the pin maps to at least one live provider.
+        if pinned and rtr.expand([pinned]):
             req.provider = pinned
             explicit_override = True
 
@@ -386,7 +388,7 @@ async def chat(req: ChatRequest, request: Request):
                 },
             )
         tier_order = TIER_TO_ORDER[router_decision.tier]
-        candidates = [p for p in tier_order if p in rtr.providers]
+        candidates = rtr.expand(tier_order)
     else:
         candidates = rtr.candidates(req.provider) if req.provider else list(rtr.order)
 
