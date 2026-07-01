@@ -17,7 +17,7 @@ Port: **8111** (V9 stays on 8109 for older student work).
 ## Install
 
 ```sh
-cd glc_v1_imap
+cd glc_v1
 uv sync
 uv run glc serve
 ```

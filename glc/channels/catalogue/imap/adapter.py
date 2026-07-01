@@ -79,14 +79,10 @@ class Adapter(ChannelAdapter):
 
         # Real disk artifact store (production). In test mode the mock's
         # store_artifact() is used instead, so we skip the real store.
-        self._artifact_store: ArtifactStore | None = (
-            None if self.mock is not None else ArtifactStore()
-        )
+        self._artifact_store: ArtifactStore | None = None if self.mock is not None else ArtifactStore()
 
         # Real UID tracker (production). Not used in mock/test mode.
-        self._uid_tracker: UidTracker | None = (
-            None if self.mock is not None else UidTracker()
-        )
+        self._uid_tracker: UidTracker | None = None if self.mock is not None else UidTracker()
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -190,9 +186,7 @@ class Adapter(ChannelAdapter):
             return None
 
         # 5. Store all attachment blobs → art:<sha> refs
-        attachments: list[Attachment] = [
-            self._store_attachment(att) for att in parsed.attachments
-        ]
+        attachments: list[Attachment] = [self._store_attachment(att) for att in parsed.attachments]
 
         # 6. Mark UID as processed (live mode only — prevents reprocessing
         #    on reconnect without relying on server-side \Seen flag alone)
