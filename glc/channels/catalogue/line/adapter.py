@@ -1,8 +1,28 @@
-"""Stub adapter for LINE Messaging API.
+"""LINE Messaging API adapter for the Session 11 channel slot.
 
-Group assignment: implement on_message and send against the mock-API
-fake in tests/channels/mocks/line_mock.py. See docs/ADAPTER_GUIDE.md
-for the standard workflow.
+This adapter is a **wire-format translator only**: it turns an inbound LINE
+webhook into a ``ChannelMessage`` (``on_message``) and a ``ChannelReply`` into
+the right LINE Messaging API payload (``send``). It never opens a network
+connection itself — the actual HTTP call is delegated to an injected
+``LineTransport``.
+
+To run a real LINE bot from this adapter an integrator must additionally:
+
+1. Run a webhook server that receives LINE's POSTs and calls ``on_message``.
+2. Verify the ``X-Line-Signature`` header (HMAC-SHA256 over the raw request
+   body with the channel secret, base64-encoded) *before* trusting the payload.
+3. Inject a ``LineTransport`` via ``config={"transport": ...}`` that performs
+   the real reply/push HTTP calls.
+
+A complete reference for all three lives in ``dev/live_bridge.py``
+(``verify_line_signature``, the FastAPI ``/callback`` endpoint, and
+``RealLineTransport``).
+
+Config keys read by this adapter:
+
+- ``transport`` (preferred) / ``mock`` (back-compat alias) — the ``LineTransport``.
+- ``is_public_channel: bool`` — when true, strangers are run through the
+  public-channel allowlist.
 """
 
 from __future__ import annotations
@@ -18,6 +38,12 @@ from .schemas import LineEvent
 
 
 class Adapter(ChannelAdapter):
+    """Translate LINE webhooks to/from the runtime envelopes.
+
+    The network I/O lives in the injected ``LineTransport``; see the module
+    docstring for what an integrator must supply to run a real bot.
+    """
+
     name = "line"
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
@@ -52,6 +78,12 @@ class Adapter(ChannelAdapter):
             reply_token=event["replyToken"],
             message_type=event["message"].get("type", "text"),
         )
+        set_reply_token = getattr(transport, "set_reply_token", None)
+        if parsed.reply_token:
+            if callable(set_reply_token):
+                set_reply_token(parsed.user_id, parsed.reply_token)
+            else:
+                self._set_local_reply_token(parsed.user_id, parsed.reply_token)
 
         # Stash the reply token so send() can consume it later.
         self._reply_tokens[parsed.user_id] = parsed.reply_token
