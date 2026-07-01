@@ -18,7 +18,7 @@ import os
 import re
 import threading
 import time
-from dataclasses import dataclass#, field ## changed due to lint failed 
+from dataclasses import dataclass
 from pathlib import Path
 
 _HEX16_RE = re.compile(r"^[0-9a-f]{16}$")
