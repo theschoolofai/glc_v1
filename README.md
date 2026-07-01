@@ -1,5 +1,12 @@
 # GLC v1 — Gateway for LLMs and Channels
 
+> **Session 12 update**: this is the S11 deliverable. S12's deliverable
+> is **[theschoolofai/glc_v2](https://github.com/theschoolofai/glc_v2)** —
+> a containerised, Modal-deployed version of this gateway, designed
+> as the pen-test attack target for the S12 assignment. Read v2's
+> README to see what changed and how to participate in the
+> pen-testing assignment.
+
 GLC v1 is the Session 11 deliverable. It absorbs the V9 LLM gateway
 (text chat, vision, embeddings, cost ledger, provider routing) and
 adds the new channel and voice layer for the first time. The S9 agent
