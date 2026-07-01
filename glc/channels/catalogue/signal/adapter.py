@@ -1,29 +1,143 @@
-"""Stub adapter for Signal via signal-cli.
+"""Signal adapter — signal-cli JSON-RPC wire format.
 
-Group assignment: implement on_message and send against the mock-API
-fake in tests/channels/mocks/signal_mock.py. See docs/ADAPTER_GUIDE.md
-for the standard workflow.
+Inbound:  JSON-RPC notification, method "receive".
+          params.envelope.source       → sender phone (E.164)
+          params.envelope.dataMessage.message → text body
+          params.envelope.dataMessage.groupInfo.groupId → group (base64)
+
+Outbound: JSON-RPC request, method "send".
+          DM:    params = {recipient, message}
+          Group: params = {groupId, message}
+
+Required env vars: SIGNAL_CLI_PATH, SIGNAL_ACCOUNT_NUMBER
 """
 
 from __future__ import annotations
 
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from glc.channels.base import ChannelAdapter
+from glc.channels.catalogue.signal.schemas import (
+    DataMessage,
+    SendParams,
+    SignalEnvelope,
+    SignalReceiveNotification,
+    SignalSendRequest,
+)
 from glc.channels.envelope import ChannelMessage, ChannelReply
+from glc.security.allowlists import allowed
+from glc.security.pairing import get_pairing_store
+from glc.security.trust_level import classify
 
 
 class Adapter(ChannelAdapter):
+    """Translates between signal-cli JSON-RPC wire format and GLC envelopes."""
+
     name = "signal"
 
-    async def on_message(self, raw: Any) -> ChannelMessage:
-        raise NotImplementedError(
-            "Group assignment: implement on_message and send. "
-            "See docs/ADAPTER_GUIDE.md and glc/channels/catalogue/signal/README.md."
+    async def on_message(self, raw: Any) -> ChannelMessage | None:
+        # Reject non-dict payloads (e.g. bare strings from broken transports).
+        if not isinstance(raw, dict):
+            return None
+
+        # Only process "receive" notifications; ignore keepalives / responses.
+        if raw.get("method") != "receive":
+            return None
+
+        # signal-cli can drop the JSON-RPC socket; the mock signals this via
+        # pop_disconnect(). Acknowledge the reconnect and keep processing the
+        # event instead of raising.
+        mock = self.config.get("mock")
+        if mock is not None and hasattr(mock, "pop_disconnect"):
+            mock.pop_disconnect()
+
+        notification = SignalReceiveNotification.model_validate(raw)
+        params = notification.params
+        envelope = params.envelope if params else None
+        if envelope is None or not envelope.source:
+            return None
+
+        channel_user_id = envelope.source
+        data_message = envelope.data_message
+
+        # Drop envelopes without a data message (e.g. typing indicators, receipts).
+        if data_message is None:
+            return None
+
+        text = (data_message.message or "").strip() or None
+
+        group_id: str | None = None
+        if data_message and data_message.group_info:
+            group_id = data_message.group_info.group_id
+
+        trust_level = classify(self.name, channel_user_id)
+
+        # In public channels the default posture is owner-/allowlist-only.
+        # Consult the allowlist before surfacing strangers; silently drop
+        # senders who are not permitted.
+        if self.config.get("is_public_channel"):
+            owner_ids = [rec.channel_user_id for rec in get_pairing_store().owners(self.name)]
+            ok, _reason = allowed(
+                self.name,
+                channel_user_id,
+                owner_ids=owner_ids,
+                is_public_channel=True,
+            )
+            if not ok:
+                return None
+
+        arrived_at = self._arrived_at(envelope, data_message)
+
+        metadata: dict[str, Any] = {}
+        if group_id:
+            metadata["signal_group_id"] = group_id
+
+        return ChannelMessage(
+            channel=self.name,
+            channel_user_id=channel_user_id,
+            user_handle=envelope.source_name or channel_user_id,
+            text=text,
+            thread_id=group_id,
+            trust_level=trust_level,
+            arrived_at=arrived_at,
+            metadata=metadata,
         )
 
+    @staticmethod
+    def _arrived_at(envelope: SignalEnvelope, data_message: DataMessage | None) -> datetime:
+        # signal-cli timestamps are epoch milliseconds.
+        ts_ms = None
+        if data_message is not None and data_message.timestamp is not None:
+            ts_ms = data_message.timestamp
+        elif envelope is not None and envelope.timestamp is not None:
+            ts_ms = envelope.timestamp
+        if ts_ms is None:
+            return datetime.now(UTC)
+        return datetime.fromtimestamp(ts_ms / 1000, tz=UTC)
+
     async def send(self, reply: ChannelReply) -> Any:
-        raise NotImplementedError(
-            "Group assignment: implement on_message and send. "
-            "See docs/ADAPTER_GUIDE.md and glc/channels/catalogue/signal/README.md."
-        )
+        # Guard: nothing to send
+        if not reply.text and not reply.attachments:
+            raise ValueError("send: reply must have text or at least one attachment")
+
+        # Guard: DM with no destination
+        if not reply.thread_id and not reply.channel_user_id:
+            raise ValueError("send: DM reply requires a non-empty channel_user_id")
+
+        params_dict: dict[str, Any] = {"message": reply.text or ""}
+        if reply.thread_id:
+            params_dict["groupId"] = reply.thread_id
+        else:
+            params_dict["recipient"] = reply.channel_user_id
+        params = SendParams.model_validate(params_dict)
+        request = SignalSendRequest(id=uuid.uuid4().hex, params=params)
+
+        payload = request.model_dump(by_alias=True, exclude_none=True)
+
+        mock = self.config.get("mock")
+        if mock is not None:
+            return await mock.send(payload)
+
+        return payload
