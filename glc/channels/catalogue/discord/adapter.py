@@ -61,7 +61,7 @@ class Adapter(ChannelAdapter):
 
     # ── inbound: Discord dispatch frame → ChannelMessage ──────────────────
 
-    async def on_message(self, raw: Any) -> ChannelMessage | None:
+    async def on_message(self, raw: Any) -> ChannelMessage | None:  # type: ignore[override]
         # A dropped gateway connection surfaces as a pending disconnect on the
         # transport. A live adapter resumes the session; for translation we
         # clear the flag and keep processing the delivered event instead of
