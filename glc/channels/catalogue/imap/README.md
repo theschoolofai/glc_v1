@@ -149,21 +149,23 @@ Edit `.env` with your credentials:
 ```bash
 IMAP_HOST=imap.zoho.in
 IMAP_PORT=993
-IMAP_USER=bot@yourdomain.com
+IMAP_USER=bot@<your-domain>.com
 IMAP_PASSWORD=your-zoho-app-password
 
 SMTP_HOST=smtp.zoho.in
 SMTP_PORT=587
-SMTP_USER=bot@yourdomain.com
+SMTP_USER=bot@<your-domain>.com
 SMTP_PASSWORD=your-zoho-app-password
 
-BOT_FROM=bot@yourdomain.com
-GLC_IMAP_OWNER=your-personal@email.com
+BOT_FROM=bot@<your-domain>.com
+GLC_IMAP_OWNER=owner@example.com
 ```
 
 ### Step 4 — Run the live demo server
 
 ```bash
+cd glc_v1_imap
+uv sync
 uv run python -m glc.channels.catalogue.imap.server
 ```
 
@@ -190,7 +192,7 @@ full pipeline.
 ```
 [BOOT ] Owner paired: you@personal.com → owner_paired
 [BOOT ] IMAP/SMTP server started — polling every 5s
-[BOOT ] Send an email to bot@yourdomain.com to test the pipeline
+[BOOT ] Send an email to bot@<your-domain>.com to test the pipeline
 [IMAP ] Connected to imap.zoho.in:993
 [IMAP ] Watching INBOX
 

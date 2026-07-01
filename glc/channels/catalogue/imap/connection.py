@@ -42,7 +42,7 @@ class ImapConnection:
 
     Usage (production):
         conn = ImapConnection(host="imap.zoho.in", port=993,
-                              user="bot@domain.com", password="<app-password>")
+                              user="bot@your-domain.com", password="<app-password>")
         conn.connect()
         for ev in conn.fetch_unseen():
             process(ev)
