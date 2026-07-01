@@ -4,9 +4,12 @@ Inbound:  Twilio webhook POST (application/x-www-form-urlencoded) -> ChannelMess
 Outbound: ChannelReply -> POST /2010-04-01/Accounts/{AccountSid}/Messages.json
 
 Environment variables (live usage):
-  TWILIO_ACCOUNT_SID   - AC... (Basic-Auth username)
-  TWILIO_AUTH_TOKEN    - auth token (Basic-Auth password)
-  TWILIO_PHONE_NUMBER  - bot's Twilio phone number; used as outbound From
+  TWILIO_ACCOUNT_SID        - AC... (Basic-Auth username)
+  TWILIO_AUTH_TOKEN         - auth token (Basic-Auth password + webhook signing)
+  TWILIO_PHONE_NUMBER       - bot's Twilio phone number; used as outbound From
+  GLC_ARTIFACT_PUBLIC_BASE  - public base URL used to serve inbound artifacts
+                              back out as outbound MMS MediaUrl, e.g.
+                              https://host/artifacts (art:<sha> -> <base>/<sha>)
 """
 
 from __future__ import annotations
@@ -23,6 +26,39 @@ from glc.channels.envelope import Attachment, ChannelMessage, ChannelReply
 from glc.security.allowlists import allowed
 from glc.security.pairing import get_pairing_store
 from glc.security.trust_level import classify
+
+from .schemas import TwilioInboundForm
+
+AttachmentKind = Literal["image", "audio", "video", "file"]
+
+# Carrier / Twilio Advanced Opt-Out keywords. Honoring these is a
+# compliance requirement for production SMS senders.
+_STOP_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"}
+_START_KEYWORDS = {"START", "YES", "UNSTOP"}
+_HELP_KEYWORDS = {"HELP", "INFO"}
+
+
+def _media_kind(content_type: str) -> AttachmentKind:
+    """Map a MIME type to a canonical envelope attachment kind."""
+    if content_type.startswith("image/"):
+        return "image"
+    if content_type.startswith("audio/"):
+        return "audio"
+    if content_type.startswith("video/"):
+        return "video"
+    return "file"
+
+
+def _detect_keyword(body: str) -> str | None:
+    """Return the normalized carrier keyword if the body is exactly one."""
+    token = (body or "").strip().upper()
+    if token in _STOP_KEYWORDS:
+        return "STOP"
+    if token in _START_KEYWORDS:
+        return "START"
+    if token in _HELP_KEYWORDS:
+        return "HELP"
+    return None
 
 
 class Adapter(ChannelAdapter):
@@ -53,10 +89,10 @@ class Adapter(ChannelAdapter):
                 metadata={"reconnect": True},
             )
 
-        from_phone: str = raw.get("From", "")
-        to_phone: str = raw.get("To", "")
-        body: str = raw.get("Body", "")
-        num_media: int = int(raw.get("NumMedia", "0") or "0")
+        form = TwilioInboundForm.from_raw(raw)
+        from_phone = form.From
+        to_phone = form.To
+        body = form.Body
 
         # Learn the bot's phone from the inbound To field for outbound use.
         if to_phone and not self._bot_number:
@@ -90,26 +126,39 @@ class Adapter(ChannelAdapter):
 
         # MMS: download each media item, SHA-256 hash, persist to artifact store.
         attachments: list[Attachment] = []
-        for i in range(num_media):
-            media_url = raw.get(f"MediaUrl{i}", "")
-            media_ct = raw.get(f"MediaContentType{i}", "application/octet-stream")
-            if not media_url:
-                continue
-
+        for item in form.media_items():
             if mock is not None:
-                data = mock.download(media_url)
+                data = mock.download(item.url)
             else:
-                data = await self._download_media(media_url)
-
-            sha = hashlib.sha256(data).hexdigest()
+                data = await self._download_media(item.url)
 
             if mock is not None:
+                # Test contract: mock keys artifacts by the full sha256 digest.
+                sha = hashlib.sha256(data).hexdigest()
                 ref = mock.store_artifact(sha, data)
             else:
-                ref = f"art:{sha}"
+                # Live: persist the bytes for real (fixes the discarded-bytes bug).
+                from .artifacts import put
 
-            kind: Literal["image", "file"] = "image" if media_ct.startswith("image/") else "file"
-            attachments.append(Attachment(kind=kind, ref=ref, mime=media_ct))
+                ref = put(
+                    data,
+                    content_type=item.content_type,
+                    source="twilio_sms",
+                    descriptor=f"MMS media from {from_phone}",
+                )
+
+            attachments.append(
+                Attachment(kind=_media_kind(item.content_type), ref=ref, mime=item.content_type)
+            )
+
+        metadata: dict[str, Any] = {
+            "message_sid": form.MessageSid,
+            "account_sid": form.AccountSid,
+        }
+        keyword = _detect_keyword(body)
+        if keyword is not None:
+            # Surface opt-out/help keywords so the gateway/agent can comply.
+            metadata["sms_keyword"] = keyword
 
         return ChannelMessage(
             channel=self.name,
@@ -119,10 +168,7 @@ class Adapter(ChannelAdapter):
             attachments=attachments,
             trust_level=trust_level,
             arrived_at=datetime.now(UTC),
-            metadata={
-                "message_sid": raw.get("MessageSid", ""),
-                "account_sid": raw.get("AccountSid", ""),
-            },
+            metadata=metadata,
         )
 
     async def send(self, reply: ChannelReply) -> Any:
@@ -132,6 +178,11 @@ class Adapter(ChannelAdapter):
         optional `MediaUrl` for image attachments. Uses the mock transport
         when supplied in config, otherwise posts to Twilio's REST API using
         HTTP Basic Auth with `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN`.
+
+        On a non-2xx response (rate limit, validation error, ...) the live
+        path returns Twilio's error JSON dict (which carries `code`/`status`)
+        rather than raising, matching the mock contract so callers handle
+        429s uniformly.
         """
         from_phone = self._bot_number or self._learned_bot_number
         if not from_phone:
@@ -155,19 +206,27 @@ class Adapter(ChannelAdapter):
             "Body": body,
         }
 
-        # Outbound MMS: promote image attachment public_urls to MediaUrl.
-        if reply.attachments:
-            img_urls = [(a.metadata or {}).get("public_url") for a in reply.attachments if a.kind == "image"]
-            img_urls = [url for url in img_urls if url]
-            if img_urls:
-                if len(img_urls) == 1:
-                    payload["MediaUrl"] = img_urls[0]
-                else:
-                    payload["MediaUrl"] = img_urls
+        # Outbound MMS: resolve image attachments to public MediaUrls. Twilio
+        # fetches MediaUrl itself, so we need a publicly reachable URL.
+        media_urls: list[str] = []
+        skipped: list[str] = []
+        for a in reply.attachments:
+            if a.kind != "image":
+                continue
+            url = self._public_media_url(a)
+            if url:
+                media_urls.append(url)
+            else:
+                skipped.append(a.ref)
+        if media_urls:
+            payload["MediaUrl"] = media_urls[0] if len(media_urls) == 1 else media_urls
 
         mock = self.config.get("mock")
         if mock is not None:
-            return await mock.send(payload)
+            result = await mock.send(payload)
+            if skipped and isinstance(result, dict):
+                result.setdefault("skipped_media", skipped)
+            return result
 
         # Real Twilio REST dispatch.
         account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
@@ -180,8 +239,52 @@ class Adapter(ChannelAdapter):
                 auth=(account_sid, auth_token),
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
-            resp.raise_for_status()
-            return resp.json()
+        result = self._parse_response(resp)
+        if skipped and isinstance(result, dict):
+            result.setdefault("skipped_media", skipped)
+        return result
+
+    @staticmethod
+    def _parse_response(resp: httpx.Response) -> Any:
+        """Return the JSON body; on non-2xx annotate with the HTTP status
+        instead of raising so 429/4xx propagate to the caller as a dict."""
+        try:
+            body = resp.json()
+        except Exception:
+            body = {"message": resp.text}
+        if resp.is_success:
+            return body
+        if isinstance(body, dict):
+            body.setdefault("status", resp.status_code)
+            retry_after = resp.headers.get("Retry-After")
+            if retry_after is not None:
+                body.setdefault("retry_after", retry_after)
+            return body
+        return {"status": resp.status_code, "body": body}
+
+    def _public_media_url(self, attachment: Attachment) -> str | None:
+        """Resolve an outbound image attachment to a public URL Twilio can GET.
+
+        Preference order:
+          1. explicit metadata["public_url"]
+          2. a plain http(s) URL sitting in `ref`
+          3. art:<sha> resolved against artifact_public_base / GLC_ARTIFACT_PUBLIC_BASE
+        Returns None if none is available (caller records it as skipped).
+        """
+        public_url = (attachment.metadata or {}).get("public_url")
+        if public_url:
+            return str(public_url)
+
+        ref = attachment.ref or ""
+        if ref.startswith("http://") or ref.startswith("https://"):
+            return ref
+
+        if ref.startswith("art:"):
+            base = self.config.get("artifact_public_base") or os.environ.get("GLC_ARTIFACT_PUBLIC_BASE", "")
+            if base:
+                sha = ref.removeprefix("art:")
+                return f"{base.rstrip('/')}/{sha}"
+        return None
 
     async def _download_media(self, url: str) -> bytes:
         """Download Twilio-hosted MMS media using Basic Auth."""
