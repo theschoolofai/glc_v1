@@ -17,7 +17,7 @@ class ChannelAdapter(ABC):
         self.config = config or {}
 
     @abstractmethod
-    async def on_message(self, raw: Any) -> ChannelMessage | None:
+    async def on_message(self, raw: Any) -> ChannelMessage:
         """Translate a native wire-format event into a ChannelMessage.
 
         The wire format is channel-specific (Telegram Update, Discord
