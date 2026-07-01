@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 from glc.channels.catalogue.twilio_sms.adapter import Adapter
 from glc.channels.envelope import Attachment, ChannelReply
 from glc.security.pairing import get_pairing_store

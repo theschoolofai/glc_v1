@@ -136,4 +136,3 @@ async def test_channel_specific_behaviour_mms_media_persists_as_artifact(mock, p
     await adapter.send(reply)
     out = mock.send_log[-1]
     assert "MediaUrl" in out or "MediaUrl0" in out, "outbound MMS must include MediaUrl(0)"
-
