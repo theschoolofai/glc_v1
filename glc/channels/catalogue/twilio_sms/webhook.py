@@ -55,9 +55,7 @@ def compute_signature(auth_token: str, url: str, params: dict[str, Any]) -> str:
     return base64.b64encode(digest).decode("ascii")
 
 
-def validate_signature(
-    auth_token: str, url: str, params: dict[str, Any], signature: str | None
-) -> bool:
+def validate_signature(auth_token: str, url: str, params: dict[str, Any], signature: str | None) -> bool:
     """Constant-time check of a Twilio webhook signature."""
     if not auth_token or not signature:
         return False
@@ -90,9 +88,7 @@ async def gateway_roundtrip(
 
     token = token or get_or_create_install_token()
     uri = f"ws://{host}:{port}/v1/channels/{envelope.channel}"
-    async with websockets.connect(
-        uri, additional_headers={"Authorization": f"Bearer {token}"}
-    ) as ws:
+    async with websockets.connect(uri, additional_headers={"Authorization": f"Bearer {token}"}) as ws:
         await ws.send(envelope.model_dump_json())
         raw = await ws.recv()
 

@@ -92,16 +92,16 @@ def _make_handle_message(adapter: Adapter, cfg: dict[str, Any]):
         _field("text", (msg.text or "(empty)"))
         if msg.attachments:
             for a in msg.attachments:
-                _field("attachment", f'kind={a.kind} mime={a.mime} ref={a.ref}', CYAN)
+                _field("attachment", f"kind={a.kind} mime={a.mime} ref={a.ref}", CYAN)
         if msg.metadata.get("sms_keyword"):
             _field("keyword", msg.metadata["sms_keyword"], YELLOW)
 
         # ── Bridge to the GLC gateway over a real WebSocket ──
-        print(f"\n  {BOLD}-> WS /v1/channels/{msg.channel}{RESET} {DIM}ws://{cfg['gw_host']}:{cfg['gw_port']}{RESET}")
+        print(
+            f"\n  {BOLD}-> WS /v1/channels/{msg.channel}{RESET} {DIM}ws://{cfg['gw_host']}:{cfg['gw_port']}{RESET}"
+        )
         try:
-            reply = await gateway_roundtrip(
-                msg, host=cfg["gw_host"], port=cfg["gw_port"]
-            )
+            reply = await gateway_roundtrip(msg, host=cfg["gw_host"], port=cfg["gw_port"])
         except Exception as e:
             print(f"  {RED}gateway unreachable: {e!r}{RESET}")
             print(f"  {DIM}(is `uv run glc serve` running on {cfg['gw_host']}:{cfg['gw_port']}?){RESET}")
@@ -136,9 +136,7 @@ def main() -> None:
 
     # ── Pair the owner so inbound is classified owner_paired ──
     if cfg["owner_number"]:
-        get_pairing_store().force_pair_owner(
-            "twilio_sms", cfg["owner_number"], user_handle="owner"
-        )
+        get_pairing_store().force_pair_owner("twilio_sms", cfg["owner_number"], user_handle="owner")
         _field("owner", cfg["owner_number"], GREEN)
         _field("trust", "owner_paired", GREEN)
     else:
@@ -162,8 +160,10 @@ def main() -> None:
     adapter = Adapter(config={"phone_number": cfg["phone_number"]})
     app = build_app(adapter, _make_handle_message(adapter, cfg))
 
-    print(f"\n  {GREEN}Listening{RESET} on {WHITE}0.0.0.0:{cfg['port']}{RESET}  "
-          f"{DIM}POST {'{base}'}/webhooks/twilio_sms  ·  Ctrl+C to stop{RESET}\n")
+    print(
+        f"\n  {GREEN}Listening{RESET} on {WHITE}0.0.0.0:{cfg['port']}{RESET}  "
+        f"{DIM}POST {'{base}'}/webhooks/twilio_sms  ·  Ctrl+C to stop{RESET}\n"
+    )
     uvicorn.run(app, host="0.0.0.0", port=cfg["port"], log_level="warning")
 
 

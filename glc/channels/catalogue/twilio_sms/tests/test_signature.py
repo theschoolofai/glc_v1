@@ -51,6 +51,4 @@ def test_missing_token_fails():
 def test_signature_independent_of_param_order():
     # Twilio sorts params by key; a reordered dict yields the same signature.
     reordered = {k: PARAMS[k] for k in reversed(list(PARAMS))}
-    assert compute_signature(AUTH_TOKEN, URL, reordered) == compute_signature(
-        AUTH_TOKEN, URL, PARAMS
-    )
+    assert compute_signature(AUTH_TOKEN, URL, reordered) == compute_signature(AUTH_TOKEN, URL, PARAMS)

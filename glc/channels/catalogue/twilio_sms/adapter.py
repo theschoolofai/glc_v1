@@ -280,9 +280,7 @@ class Adapter(ChannelAdapter):
             return ref
 
         if ref.startswith("art:"):
-            base = self.config.get("artifact_public_base") or os.environ.get(
-                "GLC_ARTIFACT_PUBLIC_BASE", ""
-            )
+            base = self.config.get("artifact_public_base") or os.environ.get("GLC_ARTIFACT_PUBLIC_BASE", "")
             if base:
                 sha = ref.removeprefix("art:")
                 return f"{base.rstrip('/')}/{sha}"
