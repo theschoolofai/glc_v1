@@ -155,13 +155,15 @@ class Adapter(ChannelAdapter):
             "Body": body,
         }
 
-        # Outbound MMS: the first image attachment becomes MediaUrl.
+        # Outbound MMS: promote image attachment public_urls to MediaUrl.
         if reply.attachments:
-            img = next((a for a in reply.attachments if a.kind == "image"), None)
-            if img is not None:
-                public_url = (img.metadata or {}).get("public_url")
-                if public_url:
-                    payload["MediaUrl"] = public_url
+            img_urls = [(a.metadata or {}).get("public_url") for a in reply.attachments if a.kind == "image"]
+            img_urls = [url for url in img_urls if url]
+            if img_urls:
+                if len(img_urls) == 1:
+                    payload["MediaUrl"] = img_urls[0]
+                else:
+                    payload["MediaUrl"] = img_urls
 
         mock = self.config.get("mock")
         if mock is not None:
